@@ -6,8 +6,7 @@ from typing import List
 import numpy as np
 
 from src.linalg import hermitianize, proj_to_density
-
-from src.tensor import dims_prod
+from src.tensor import dims_prod, Q_i_lift
 
 
 def random_unitary(D: int, rng: np.random.Generator) -> np.ndarray:
@@ -85,4 +84,58 @@ def gen_marginal(
         U = random_unitary(d, rng)
         rho = U @ np.diag(lam) @ U.conj().T
         return proj_to_density(rho, jitter=1e-12)
+
+# ---- Qubit Ising-type Hamiltonians (d=2) ----
+
+PAULI_X = np.array([[0, 1], [1, 0]], dtype=complex)
+PAULI_Z = np.array([[1, 0], [0, -1]], dtype=complex)
+
+
+def embed_two_body(opA: np.ndarray, opB: np.ndarray, dims: List[int], i: int, j: int) -> np.ndarray:
+    """Dense embedding of a two-body operator opA (site i) ⊗ opB (site j) into full space."""
+    out = np.array([[1.0]], dtype=complex)
+    for k, dk in enumerate(dims):
+        if k == i:
+            out = np.kron(out, opA)
+        elif k == j:
+            out = np.kron(out, opB)
+        else:
+            out = np.kron(out, np.eye(int(dk), dtype=complex))
+    return hermitianize(out)
+
+
+def gen_H_ising_qubits(
+    N: int,
+    rng: np.random.Generator,
+    scale: float = 1.0,
+    noncommuting: bool = True
+) -> np.ndarray:
+    """
+    1D Ising-type qubit Hamiltonian on N sites:
+      sum_i h_i Z_i + sum_i J_i Z_i Z_{i+1} + (optional) sum_i K_i X_i X_{i+1}
+    The last term makes it generally non-commuting.
+    """
+    if N < 2:
+        raise ValueError(f"gen_H_ising_qubits requires N >= 2, got N={N}.")
+
+    dims = [2] * N
+    D = 2 ** N
+    H = np.zeros((D, D), dtype=complex)
+
+    h = rng.normal(size=N)
+    J = rng.normal(size=N - 1)
+    K = rng.normal(size=N - 1) if noncommuting else np.zeros(N - 1)
+
+    for i in range(N):
+        H += h[i] * Q_i_lift(PAULI_Z, dims, i)
+
+    for i in range(N - 1):
+        H += J[i] * embed_two_body(PAULI_Z, PAULI_Z, dims, i, i + 1)
+        if noncommuting:
+            H += K[i] * embed_two_body(PAULI_X, PAULI_X, dims, i, i + 1)
+
+    w = float(np.max(np.abs(np.linalg.eigvalsh(hermitianize(H)))))
+    if w > 0:
+        H = (scale / w) * H
+    return hermitianize(H)
 
