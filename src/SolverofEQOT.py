@@ -487,7 +487,7 @@ def tune_bgda_eta(
             )
             elapsed = time.time() - t0
 
-            final_e = float(res.e_tr_list[-1]) if len(res.e_tr_list:=(res.e_tr_list)) else float("inf")
+            final_e = float(res.e_tr_list[-1]) if len(res.e_tr_list) > 0 else float("inf")
             final_F = float(res.F_list[-1]) if len(res.F_list) else float("inf")
             stop_iter = len(res.e_tr_list) - 1
 
