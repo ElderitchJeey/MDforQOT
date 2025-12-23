@@ -28,21 +28,39 @@ def proj_to_density(A: np.ndarray, jitter: float = 0.0) -> np.ndarray:
     return hermitianize(rho / tr)
 
 
-def herm_exp(H: np.ndarray) -> np.ndarray:
+def herm_expm_scaled(H: np.ndarray) -> np.ndarray:
     """
-    exp(H) for Hermitian H via eigendecomposition.
-    Stabilized by shifting by max eigenvalue (cancels as a scalar factor).
-    Note: this returns exp(H - maxEig(H) I), i.e. scaled exp(H).
-    This is often intended for numerical stability; if you need exact exp(H),
-    do not shift (or multiply back by exp(maxEig)).
+    Stable expm for Hermitian H via eigendecomposition with spectral shift.
+
+    Returns:
+      exp(H - s I) where s = max eigenvalue of H.
+      This is exp(H) scaled by a positive scalar exp(-s).
+
+    Use-case:
+      - For Gibbs normalization exp(H)/Tr exp(H), this scaling cancels out,
+        so this is the numerically preferred form.
     """
     H = hermitianize(H)
     w, V = npl.eigh(H)
-    w_shift = w - np.max(w)
-    ew = np.exp(w_shift)
-    X = (V * ew) @ V.conj().T
-    return hermitianize(X)
+    s = float(np.max(w))
+    ew = np.exp(w - s)
+    X_scaled = (V * ew) @ V.conj().T
+    return hermitianize(X_scaled)
 
+def herm_expm(H: np.ndarray) -> np.ndarray:
+    """
+    True expm(H) for Hermitian H via eigendecomposition.
+
+    This matches the interface where herm_expm_scaled(H) returns only the scaled matrix:
+      herm_expm_scaled(H) = exp(H - s I),  s = max eig(H)
+    so we recompute s here and rescale back:
+      exp(H) = exp(s) * exp(H - s I).
+    """
+    Hh = hermitianize(H)
+    # Recompute the shift (max eigenvalue) to undo the scaling
+    s = float(np.max(npl.eigvalsh(Hh)))
+    X_scaled = herm_expm_scaled(Hh)
+    return hermitianize(np.exp(s) * X_scaled)
 
 def herm_log(rho: np.ndarray, jitter: float = 1e-12) -> np.ndarray:
     """log(rho) for PSD Hermitian rho via eigendecomposition, with eigenvalue floor."""
