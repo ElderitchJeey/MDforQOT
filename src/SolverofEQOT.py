@@ -124,6 +124,8 @@ class DBGAResult:
     pi_list: Optional[List[np.ndarray]] = None
     converged: bool = False
     gibbs_calls: int = 0
+    gibbs_calls_list: Optional[List[int]] = None
+
 
 
 @dataclass
@@ -138,6 +140,8 @@ class PotentialKLDescentResult:
     pi_list: Optional[List[np.ndarray]] = None
     converged: bool = False
     gibbs_calls: int = 0
+    gibbs_calls_list: Optional[List[int]] = None
+
 
 
 @dataclass
@@ -152,6 +156,8 @@ class MDsinkhornResult:
     pi_list: Optional[List[np.ndarray]] = None
     converged: bool = False
     gibbs_calls: int = 0
+    gibbs_calls_list: Optional[List[int]] = None
+
 
 
 # ============================================================
@@ -195,6 +201,7 @@ def md_type_sinkhorn_potential(
     times: List[float] = []
     U_hist = [] if keep_U_hist else None
     pi_list = [] if keep_pi_hist else None
+    gibbs_calls_list: List[int] = []
 
     t0 = time.time()
 
@@ -207,6 +214,8 @@ def md_type_sinkhorn_potential(
         e_tr_list.append(float(e_tr))
         per_i_tr_list.append(per_i)
         times.append(time.time() - t0)
+        gibbs_calls_list.append(int(PI_COUNTER.n_calls))
+
 
         if keep_U_hist:
             U_hist.append([Ui.copy() for Ui in U_curr])
@@ -243,6 +252,7 @@ def md_type_sinkhorn_potential(
         pi_list=pi_list,
         converged=converged,
         gibbs_calls=PI_COUNTER.n_calls,
+        gibbs_calls_list=gibbs_calls_list,
     )
 
 
@@ -280,6 +290,8 @@ def potential_marginal_kl_descent(
     per_i_tr_list = [per_i]
     e_tr_list = [float(np.max(per_i))]
     times = [0.0]
+    gibbs_calls_list: List[int] = []
+    gibbs_calls_list.append(int(PI_COUNTER.n_calls))
 
     U_hist = [[Ui.copy() for Ui in U_list]] if store_hist else None
     pi_list = [pi.copy()] if store_hist else None
@@ -307,6 +319,7 @@ def potential_marginal_kl_descent(
         e_tr = float(np.max(per_i))
         e_tr_list.append(e_tr)
         times.append(elapsed)
+        gibbs_calls_list.append(int(PI_COUNTER.n_calls))
 
         if tol_tr is not None and e_tr <= tol_tr:
             converged = True
@@ -323,6 +336,7 @@ def potential_marginal_kl_descent(
         pi_list=pi_list,
         converged=converged,
         gibbs_calls=PI_COUNTER.n_calls,
+        gibbs_calls_list=gibbs_calls_list,
     )
 
 
@@ -364,6 +378,8 @@ def block_gradient_ascent(
     times: List[float] = []
     U_hist = [[Ui.copy() for Ui in U_list]] if store_hist else None
     pi_list = [pi.copy()] if store_hist else None
+    gibbs_calls_list: List[int] = []
+
 
     t0 = time.time()
     converged = False
@@ -376,6 +392,8 @@ def block_gradient_ascent(
         e_tr_list.append(e_tr)
         per_i_tr_list.append(per_i)
         times.append(time.time() - t0)
+        gibbs_calls_list.append(int(PI_COUNTER.n_calls))
+
 
         if e_tr <= tol_tr:
             converged = True
@@ -417,6 +435,7 @@ def block_gradient_ascent(
         pi_list=pi_list,
         converged=converged,
         gibbs_calls=PI_COUNTER.n_calls,
+        gibbs_calls_list=gibbs_calls_list,
     )
 
 # ============================================================
