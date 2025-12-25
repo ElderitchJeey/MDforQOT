@@ -581,3 +581,139 @@ def tune_bgda_eta(
         raise RuntimeError("tune_bgda_eta: no successful runs (all errored).")
 
     return BGDATuneResult(best_eta=best_eta, best_run=best_run, records=records)
+
+# ============================================================
+# MD-Sinkhorn inner loop (standalone)
+# ============================================================
+
+@dataclass
+class MDInnerResult:
+    i: int
+    e_i_tr_list: List[float]
+    times: List[float]
+    pi: np.ndarray
+    U_list: List[np.ndarray]
+    converged: bool
+    gibbs_calls: int
+    gibbs_calls_list: List[int]
+
+
+def md_inner_update_i(
+    *,
+    i: int,
+    U_list: List[np.ndarray],
+    H: np.ndarray,
+    gamma_i: np.ndarray,
+    eps: float,
+    dims: List[int],
+    pi0: Optional[np.ndarray] = None,
+    eta_inner: float = 1.0,
+    M_inner: int = 50,
+    tol_inner: Optional[float] = None,
+    jitter: float = 1e-12,
+    project_pi: bool = True,
+    reset_counter: bool = False,
+    keep_history: bool = True,
+) -> MDInnerResult:
+    """
+    Standalone inner loop for MD-type Sinkhorn:
+      U_i <- U_i + eta_inner * eps * (log gamma_i - log rho_i),
+      where rho_i = Tr_{≠i}(pi),  pi ∝ exp((L(U)-H)/eps).
+
+    Purpose:
+      - Isolate and test the inner iteration independently of the outer loop.
+      - Verify it reduces the i-th marginal mismatch e_i = ||Tr_{≠i}(pi) - gamma_i||_1.
+
+    Inputs:
+      i: block index to update
+      U_list: current potentials (modified in-place logically; we return an updated copy list)
+      pi0: optional current coupling consistent with U_list; if None we recompute from U_list
+      tol_inner: stopping threshold on e_i (defaults to 0 => no early stop unless provided)
+      reset_counter: if True, resets global PI_COUNTER before running (useful for experiments)
+      keep_history: if False, stores only final values (still returns 1-point lists)
+
+    Returns:
+      MDInnerResult containing final pi, updated U_list, e_i history, and gibbs call counts.
+    """
+    if not (0 <= i < len(dims)):
+        raise ValueError(f"i must be in [0, {len(dims)-1}]")
+    if len(U_list) != len(dims):
+        raise ValueError("len(U_list) must equal len(dims)")
+    if eta_inner <= 0:
+        raise ValueError("eta_inner must be positive")
+    if M_inner < 1:
+        raise ValueError("M_inner must be >= 1")
+    if eps <= 0:
+        raise ValueError("eps must be positive")
+
+    if tol_inner is None:
+        tol_inner = 0.0  # no early stop unless user sets it
+
+    if reset_counter:
+        PI_COUNTER.reset()
+
+    # Work on a copy of potentials (avoid surprising external mutation)
+    U_new = [Ui.copy() for Ui in U_list]
+
+    # Initialize pi
+    if pi0 is None:
+        pi = gibbs_state_from_potentials(U_new, H, eps, dims, jitter=jitter, project=project_pi)
+    else:
+        pi = pi0.copy()
+
+    e_list: List[float] = []
+    times: List[float] = []
+    gibbs_calls_list: List[int] = []
+
+    t0 = time.time()
+
+    def _record(pi_curr: np.ndarray):
+        rho_i = partial_trace_except_i(pi_curr, dims, i)
+        e_i = float(trace_norm(rho_i - gamma_i))
+        if keep_history:
+            e_list.append(e_i)
+            times.append(time.time() - t0)
+            gibbs_calls_list.append(int(PI_COUNTER.n_calls))
+        return e_i
+
+    # record n=0
+    e0 = _record(pi)
+
+    converged = (e0 <= float(tol_inner)) if float(tol_inner) > 0 else False
+
+    # inner iterations
+    for _n in range(M_inner):
+        if float(tol_inner) > 0 and converged:
+            break
+
+        rho_i = partial_trace_except_i(pi, dims, i)
+
+        # V = eps*(log gamma_i - log rho_i)
+        V = eps * (herm_log(gamma_i, jitter=jitter) - herm_log(rho_i, jitter=jitter))
+        U_new[i] = hermitianize(U_new[i] + eta_inner * V)
+
+        pi = gibbs_state_from_potentials(U_new, H, eps, dims, jitter=jitter, project=project_pi)
+
+        e_i = _record(pi)
+        if float(tol_inner) > 0 and e_i <= float(tol_inner):
+            converged = True
+
+    # If keep_history=False, return only final point (still 1-element lists)
+    if not keep_history:
+        rho_i = partial_trace_except_i(pi, dims, i)
+        e_i = float(trace_norm(rho_i - gamma_i))
+        e_list = [e_i]
+        times = [time.time() - t0]
+        gibbs_calls_list = [int(PI_COUNTER.n_calls)]
+        converged = (e_i <= float(tol_inner)) if float(tol_inner) > 0 else False
+
+    return MDInnerResult(
+        i=int(i),
+        e_i_tr_list=e_list,
+        times=times,
+        pi=pi,
+        U_list=U_new,
+        converged=bool(converged),
+        gibbs_calls=int(PI_COUNTER.n_calls),
+        gibbs_calls_list=gibbs_calls_list,
+    )
