@@ -3,9 +3,9 @@ experiments/figure5_1_convergence_curves.py
 
 Chapter 5 Figure 5.1 (main):
 Convergence curves (publication style) for:
-  (i) Paper Algorithm 2.2 (2-marginal DBGA baseline)
+  (i) Paper Algorithm 2.2 (2-marginal baseline)
   (ii) Potential marginal KL-descent (our KL descent)
-  (iii) Mirror-Descent-Type Sinkhorn (MD-Sinkhorn) with inner steps M=1,5,10
+  (iii) Mirror-Descent-Type Sinkhorn (MD-Sinkhorn) with inner steps M in a user-specified list (<=3)
 
 MAIN PLOT (default):
   x-axis: log10(# Gibbs calls)
@@ -14,14 +14,14 @@ MAIN PLOT (default):
 OPTIONAL (appendix / robustness):
   --metric trace uses y-axis: log10(max_i ||Tr_{≠i} pi - gamma_i||_1)
 
-Output (png + pdf):
+Outputs (png + pdf):
   experiments/figures/fig5_1_convergence_{metric}_d{d}_eps{eps}_H{Hkind}_norm{0/1}.png
   experiments/figures/fig5_1_convergence_{metric}_d{d}_eps{eps}_H{Hkind}_norm{0/1}.pdf
 """
 
 import argparse
 import os
-from typing import List, Optional, Dict
+from typing import Dict, List, Union
 
 import numpy as np
 import matplotlib as mpl
@@ -41,6 +41,50 @@ from src.SolverofEQOT import (
 )
 
 from src.linalg import hermitianize
+
+
+# ============================================================
+# CLI parsing utilities
+# ============================================================
+
+def parse_inner_steps(raw: Union[str, List[int], List[str], None]) -> List[int]:
+    """
+    Accept:
+      --inner_steps 1 2 5     (nargs="+")
+      --inner_steps 1,2,5     (string)
+      None -> default [1,5,10]
+    Enforce: 1 <= len(list) <= 3, all positive ints, unique, preserve order.
+    """
+    if raw is None:
+        steps = [1, 5, 10]
+    elif isinstance(raw, list):
+        # could be list[int] or list[str]
+        steps = [int(x) for x in raw]
+    else:
+        s = str(raw).strip()
+        if s == "":
+            steps = [1, 5, 10]
+        else:
+            parts = [p.strip() for p in s.split(",") if p.strip() != ""]
+            steps = [int(p) for p in parts]
+
+    # sanitize
+    out: List[int] = []
+    seen = set()
+    for m in steps:
+        if m <= 0:
+            raise ValueError(f"inner_steps must be positive integers, got {m}.")
+        if m not in seen:
+            out.append(m)
+            seen.add(m)
+
+    if len(out) == 0:
+        out = [1, 5, 10]
+
+    if len(out) > 3:
+        raise ValueError(f"At most 3 inner steps are allowed (got {out}).")
+
+    return out
 
 
 # ============================================================
@@ -98,8 +142,7 @@ def make_two_marginal_instance(
 
 def safe_get_x(res) -> np.ndarray:
     """
-    Exact x-axis: gibbs_calls_list if available; else fallback to total gibbs_calls.
-    All three solvers in src/SolverofEQOT.py record gibbs_calls_list, so fallback is rarely used.
+    x-axis: gibbs_calls_list if available; else fallback to total gibbs_calls.
     """
     if hasattr(res, "gibbs_calls_list") and res.gibbs_calls_list is not None and len(res.gibbs_calls_list) > 0:
         x = np.asarray(res.gibbs_calls_list, dtype=float)
@@ -173,8 +216,8 @@ def run_algorithms(args, H, gammas, dims) -> Dict[str, object]:
     )
     results["KL descent"] = res_kl
 
-    # (iii) MD-Sinkhorn family: inner steps M = 1,5,10
-    for M in [1, 5, 10]:
+    # (iii) MD-Sinkhorn family: user-specified inner steps
+    for M in args.inner_steps:
         print(f"[Run] MD-Sinkhorn (inner steps={M}) ...")
         res_md = md_type_sinkhorn_potential(
             H, gammas, args.eps, dims,
@@ -199,7 +242,6 @@ def run_algorithms(args, H, gammas, dims) -> Dict[str, object]:
 # ============================================================
 
 def paper_style():
-    """One place to control figure style across the paper."""
     mpl.rcParams.update({
         "pdf.fonttype": 42,
         "ps.fonttype": 42,
@@ -226,20 +268,24 @@ def plot_curves(args, results: Dict[str, object], out_prefix: str):
     c_kl = colors[1]  # orange-ish
     c_md = colors[2]  # green-ish
 
+    # base styles
     style_map = {
         "Alg. 2.2": dict(color="0.35", linestyle=(0, (5, 3)), zorder=1),
         "KL descent": dict(color=c_kl, linestyle="-", zorder=4),
-        "MD-Sinkhorn (inner steps=1)": dict(color=c_md, linestyle=(0, (5, 2)), zorder=3),
-        "MD-Sinkhorn (inner steps=5)": dict(color=c_md, linestyle="-", zorder=3),
-        "MD-Sinkhorn (inner steps=10)": dict(color=c_md, linestyle=":", zorder=3),
     }
 
-    ordered_labels = [
-        "Alg. 2.2",
-        "KL descent",
-        "MD-Sinkhorn (inner steps=1)",
-        "MD-Sinkhorn (inner steps=5)",
-        "MD-Sinkhorn (inner steps=10)",
+    # MD styles: same color, different linestyles (up to 3)
+    md_linestyles = [
+        (0, (5, 2)),  # dashed
+        "-",          # solid
+        ":",          # dotted
+    ]
+    for j, M in enumerate(args.inner_steps):
+        ls = md_linestyles[j]
+        style_map[f"MD-Sinkhorn (inner steps={M})"] = dict(color=c_md, linestyle=ls, zorder=3)
+
+    ordered_labels = ["Alg. 2.2", "KL descent"] + [
+        f"MD-Sinkhorn (inner steps={M})" for M in args.inner_steps
     ]
 
     fig, ax = plt.subplots(figsize=(6.4, 4.8))
@@ -250,9 +296,7 @@ def plot_curves(args, results: Dict[str, object], out_prefix: str):
         res = results[lab]
         x = safe_get_x(res)
         y = safe_get_y(res, metric=args.metric)
-
-        st = style_map.get(lab, {})
-        ax.plot(np.log10(x), np.log10(y), label=lab, **st)
+        ax.plot(np.log10(x), np.log10(y), label=lab, **style_map.get(lab, {}))
 
     ax.set_xlabel(r"$\log_{10}(\#\ \mathrm{Gibbs\ calls})$")
 
@@ -326,8 +370,24 @@ def main():
     # Plot metric: main = Fmarg; appendix = trace
     parser.add_argument("--metric", type=str, default="Fmarg", choices=["Fmarg", "trace"])
 
+    # MD inner steps: accept either "--inner_steps 1 2 5" or "--inner_steps 1,2,5"
+    parser.add_argument(
+        "--inner_steps",
+        nargs="*",
+        default=None,
+        help="MD-Sinkhorn inner steps (<=3). Examples: --inner_steps 1 2 5  OR  --inner_steps 1,2,5. Default: 1 5 10",
+    )
+
     parser.add_argument("--out_dir", type=str, default="experiments/figures")
     args = parser.parse_args()
+
+    # parse inner steps with constraints (<=3), default [1,5,10]
+    if args.inner_steps is None or len(args.inner_steps) == 0:
+        args.inner_steps = [1, 5, 10]
+    elif len(args.inner_steps) == 1 and isinstance(args.inner_steps[0], str) and ("," in args.inner_steps[0]):
+        args.inner_steps = parse_inner_steps(args.inner_steps[0])
+    else:
+        args.inner_steps = parse_inner_steps(args.inner_steps)
 
     H, gammas, dims, hk = make_two_marginal_instance(
         d=args.d,
