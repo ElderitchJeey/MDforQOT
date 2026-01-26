@@ -10,6 +10,7 @@ from src.linalg import (
     herm_log,
     quantum_KL,
     trace_norm,
+    herm_expm,
 )
 from src.tensor import Q_i_lift, partial_trace_except_i, L_of_U
 
@@ -715,5 +716,245 @@ def md_inner_update_i(
         U_list=U_new,
         converged=bool(converged),
         gibbs_calls=int(PI_COUNTER.n_calls),
+        gibbs_calls_list=gibbs_calls_list,
+    )
+# ============================================================
+# Block gradient descent from paper Dual Block Gradient Ascent for Entropically Regularised Quantum Optimal Transport
+# ============================================================
+def gamma_from_potentials(
+    U_list: List[np.ndarray],
+    H: np.ndarray,
+    eps: float,
+    dims: List[int],
+) -> Tuple[np.ndarray, float]:
+    """
+    Γ(U) = exp( (L_of_U(U_list) - H) / eps ), unnormalised (no trace-1 constraint).
+    Returns (Gamma, Z) with Z = Tr(Gamma) (real scalar).
+    """
+    if eps <= 0:
+        raise ValueError("eps must be positive.")
+    PI_COUNTER.inc()  # <- align with _PiCounter interface
+
+    LU = hermitianize(L_of_U(U_list, dims))
+    X = hermitianize((LU - H) / eps)
+    Gamma = hermitianize(herm_expm(X))
+    Z = float(np.real(np.trace(Gamma)))
+    return Gamma, Z
+
+
+def _nu2_inv_exp_minus_x_minus_1(y: float, *, tol: float = 1e-12, max_iter: int = 80) -> float:
+    """
+    Compute ν2(y) where ν2 is the inverse of f(x)=exp(x)-x-1 on R_{>=0}.
+    Input y must be >=0. Output x>=0 s.t. exp(x)-x-1 = y.
+
+    Matches Algorithm 2.2 + Lemma 3.1 in arXiv:2503.17590.
+    """
+    if y < 0:
+        raise ValueError("nu2 inverse requires y >= 0.")
+    if y == 0:
+        return 0.0
+
+    import math
+
+    def f(x: float) -> float:
+        return math.exp(x) - x - 1.0
+
+    def fp(x: float) -> float:
+        return math.exp(x) - 1.0
+
+    lo = 0.0
+    hi = max(1.0, math.log1p(y) + 1.0)
+    while f(hi) < y:
+        hi *= 2.0
+        if hi > 1e4:
+            break
+
+    x = 0.5 * (lo + hi)
+    for _ in range(max_iter):
+        fx = f(x) - y
+        if abs(fx) <= tol * max(1.0, y):
+            return max(0.0, x)
+
+        d = fp(x)
+        if d <= 0 or not np.isfinite(d):
+            newton = None
+        else:
+            newton = x - fx / d
+
+        if (newton is None) or (newton <= lo) or (newton >= hi) or (not np.isfinite(newton)):
+            x_new = 0.5 * (lo + hi)
+        else:
+            x_new = newton
+
+        if f(x_new) < y:
+            lo = x_new
+        else:
+            hi = x_new
+        x = x_new
+
+    return max(0.0, 0.5 * (lo + hi))
+
+
+def _gauge_fix_pair_trace0_keep_tensor_sum(U: np.ndarray, V: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Gauge-fix for 2-marginal case WITHOUT changing U ⊕ V:
+      U <- U - a I,  V <- V + a I where a = Tr(U)/d1.
+    Then Tr(U)=0 and (U⊕V) is invariant.
+    """
+    d1 = U.shape[0]
+    a = float(np.real(np.trace(U))) / float(d1)
+    U2 = hermitianize(U - a * np.eye(d1, dtype=complex))
+    V2 = hermitianize(V + a * np.eye(V.shape[0], dtype=complex))
+    return U2, V2
+
+
+def dbga_algorithm_2_2(
+    H: np.ndarray,
+    gammas: List[np.ndarray],
+    eps: float,
+    dims: List[int],
+    T: int = 300,
+    tol_tr: Optional[float] = None,
+    delta: float = 1e-6,
+    gauge_trace0: bool = True,
+    store_hist: bool = False,
+    project_pi: bool = True,
+    jitter: float = 1e-12,
+    U0: Optional[np.ndarray] = None,
+    V0: Optional[np.ndarray] = None,
+) -> DBGAResult:
+    """
+    Randig–von Renesse Algorithm 2.2 (2-marginal DBGA):
+      - Alternating (Gauss–Seidel) updates
+      - Uses unnormalised Γ in gradients
+      - Fixed steps computed from β = ν2((tr((ρ⊗σ)C)-D(U0,V0))/ε)
+
+    Logging / stopping are aligned with other solvers in this file:
+      - Records (F_list, e_tr_list, per_i_tr_list, times, gibbs_calls_list)
+      - Optional stopping by tol_tr (trace mismatch) in addition to paper's delta
+      - Optional projection of pi to density for numerical robustness
+    """
+    if len(dims) != 2 or len(gammas) != 2:
+        raise ValueError("Algorithm 2.2 is 2-marginal: require len(dims)=len(gammas)=2.")
+    if eps <= 0:
+        raise ValueError("eps must be positive.")
+
+    PI_COUNTER.reset()
+
+    d1, d2 = int(dims[0]), int(dims[1])
+    rho, sigma = gammas[0], gammas[1]
+
+    U = hermitianize(U0) if U0 is not None else np.zeros((d1, d1), dtype=complex)
+    V = hermitianize(V0) if V0 is not None else np.zeros((d2, d2), dtype=complex)
+
+    def dual_D(Umat: np.ndarray, Vmat: np.ndarray) -> float:
+        Gamma, Z = gamma_from_potentials([Umat, Vmat], H, eps, dims)
+        term1 = float(np.real(np.trace(Umat @ rho)))
+        term2 = float(np.real(np.trace(Vmat @ sigma)))
+        return term1 + term2 - eps * float(np.real(Z)) + eps
+
+    rho_tensor_sigma = np.kron(rho, sigma)
+    tr_rhosig_C = float(np.real(np.trace(rho_tensor_sigma @ H)))
+
+    D0 = dual_D(U, V)
+    y = (tr_rhosig_C - D0) / eps
+    if y < 0:
+        y = 0.0
+    beta = _nu2_inv_exp_minus_x_minus_1(float(y))
+
+    import math
+    eta1 = (eps / float(d2)) * math.exp(-beta)
+    eta2 = (eps / float(d1)) * math.exp(-beta)
+
+    # init coupling for logging
+    Gamma, Z = gamma_from_potentials([U, V], H, eps, dims)
+    pi = hermitianize(Gamma / max(Z, 1e-300))
+    if project_pi:
+        pi = proj_to_density(pi, jitter=jitter)
+
+    F_list: List[float] = []
+    e_tr_list: List[float] = []
+    per_i_tr_list: List[np.ndarray] = []
+    times: List[float] = []
+    gibbs_calls_list: List[int] = []
+    U_hist = [[U.copy(), V.copy()]] if store_hist else None
+    pi_list = [pi.copy()] if store_hist else None
+
+    t0 = time.time()
+    converged = False
+
+    def _record() -> float:
+        per_i = marginal_trace_errors(pi, gammas, dims)
+        e_tr = float(np.max(per_i))
+        Fv = float(F_marg(pi, gammas, dims, jitter=jitter))
+        F_list.append(Fv)
+        e_tr_list.append(e_tr)
+        per_i_tr_list.append(per_i)
+        times.append(time.time() - t0)
+        gibbs_calls_list.append(int(PI_COUNTER.n_calls))
+        return e_tr
+
+    e_tr = _record()
+    if tol_tr is not None and e_tr <= float(tol_tr):
+        converged = True
+
+    for _ in range(T):
+        if converged:
+            break
+
+        # (4a) E1 = rho - tr2(Γ(U,V))
+        Gamma, Z = gamma_from_potentials([U, V], H, eps, dims)
+        tr2_Gamma = partial_trace_except_i(Gamma, dims, 0)
+        E1 = hermitianize(rho - tr2_Gamma)
+        normE1 = float(np.linalg.norm(E1, ord="fro"))
+
+        # (4b) U <- U + eta1 E1
+        U = hermitianize(U + eta1 * E1)
+        if gauge_trace0:
+            U, V = _gauge_fix_pair_trace0_keep_tensor_sum(U, V)
+
+        # (4c) E2 = sigma - tr1(Γ(U,V))
+        Gamma, Z = gamma_from_potentials([U, V], H, eps, dims)
+        tr1_Gamma = partial_trace_except_i(Gamma, dims, 1)
+        E2 = hermitianize(sigma - tr1_Gamma)
+        normE2 = float(np.linalg.norm(E2, ord="fro"))
+
+        # (4d) V <- V + eta2 E2
+        V = hermitianize(V + eta2 * E2)
+        if gauge_trace0:
+            U, V = _gauge_fix_pair_trace0_keep_tensor_sum(U, V)
+
+        # refresh pi for logging (normalised)
+        Gamma, Z = gamma_from_potentials([U, V], H, eps, dims)
+        pi = hermitianize(Gamma / max(Z, 1e-300))
+        if project_pi:
+            pi = proj_to_density(pi, jitter=jitter)
+
+        e_tr = _record()
+
+        # stopping: either paper delta OR trace mismatch tol_tr
+        if max(normE1, normE2) < float(delta):
+            converged = True
+            break
+        if tol_tr is not None and e_tr <= float(tol_tr):
+            converged = True
+            break
+
+        if store_hist:
+            assert U_hist is not None and pi_list is not None
+            U_hist.append([U.copy(), V.copy()])
+            pi_list.append(pi.copy())
+
+    return DBGAResult(
+        F_list=F_list,
+        e_tr_list=e_tr_list,
+        per_i_tr_list=per_i_tr_list,
+        times=times,
+        pi=pi,
+        U_list=[U, V],
+        U_hist=U_hist,
+        pi_list=pi_list,
+        converged=converged,
+        gibbs_calls=PI_COUNTER.n_calls,
         gibbs_calls_list=gibbs_calls_list,
     )
