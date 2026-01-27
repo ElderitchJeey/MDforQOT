@@ -17,11 +17,17 @@ OPTIONAL (appendix / robustness):
 Outputs (png + pdf):
   experiments/figures/fig5_1_convergence_{metric}_d{d}_eps{eps}_H{Hkind}_norm{0/1}.png
   experiments/figures/fig5_1_convergence_{metric}_d{d}_eps{eps}_H{Hkind}_norm{0/1}.pdf
+
+Extra summary table (CSV + LaTeX):
+  experiments/figures/fig5_1_convergence_{metric}_d{d}_eps{eps}_H{Hkind}_norm{0/1}_summary.csv
+  experiments/figures/fig5_1_convergence_{metric}_d{d}_eps{eps}_H{Hkind}_norm{0/1}_summary.tex
 """
 
 import argparse
 import os
-from typing import Dict, List, Union
+import time
+import csv
+from typing import Dict, List, Union, Any
 
 import numpy as np
 import matplotlib as mpl
@@ -50,7 +56,7 @@ from src.linalg import hermitianize
 def parse_inner_steps(raw: Union[str, List[int], List[str], None]) -> List[int]:
     """
     Accept:
-      --inner_steps 1 2 5     (nargs="+")
+      --inner_steps 1 2 5     (nargs="*")
       --inner_steps 1,2,5     (string)
       None -> default [1,5,10]
     Enforce: 1 <= len(list) <= 3, all positive ints, unique, preserve order.
@@ -58,7 +64,6 @@ def parse_inner_steps(raw: Union[str, List[int], List[str], None]) -> List[int]:
     if raw is None:
         steps = [1, 5, 10]
     elif isinstance(raw, list):
-        # could be list[int] or list[str]
         steps = [int(x) for x in raw]
     else:
         s = str(raw).strip()
@@ -68,7 +73,6 @@ def parse_inner_steps(raw: Union[str, List[int], List[str], None]) -> List[int]:
             parts = [p.strip() for p in s.split(",") if p.strip() != ""]
             steps = [int(p) for p in parts]
 
-    # sanitize
     out: List[int] = []
     seen = set()
     for m in steps:
@@ -80,10 +84,8 @@ def parse_inner_steps(raw: Union[str, List[int], List[str], None]) -> List[int]:
 
     if len(out) == 0:
         out = [1, 5, 10]
-
     if len(out) > 3:
         raise ValueError(f"At most 3 inner steps are allowed (got {out}).")
-
     return out
 
 
@@ -180,20 +182,55 @@ def safe_get_y(res, metric: str) -> np.ndarray:
     raise ValueError("metric must be 'Fmarg' or 'trace'.")
 
 
+def get_total_gibbs_calls(res) -> int:
+    """
+    Prefer res.gibbs_calls; fallback to last entry of gibbs_calls_list.
+    """
+    if hasattr(res, "gibbs_calls") and res.gibbs_calls is not None:
+        return int(res.gibbs_calls)
+    if hasattr(res, "gibbs_calls_list") and res.gibbs_calls_list is not None and len(res.gibbs_calls_list) > 0:
+        return int(res.gibbs_calls_list[-1])
+    return 0
+
+
+def get_final_value(res, attr: str) -> float:
+    """
+    attr in {"F_list","e_tr_list"}; returns last value or NaN.
+    """
+    if hasattr(res, attr):
+        lst = getattr(res, attr)
+        if lst is not None and len(lst) > 0:
+            return float(lst[-1])
+    return float("nan")
+
+
 # ============================================================
-# Run solvers
+# Run solvers + timing
 # ============================================================
 
-def run_algorithms(args, H, gammas, dims) -> Dict[str, object]:
+def run_algorithms(args, H, gammas, dims) -> (Dict[str, object], List[Dict[str, Any]]):
     results: Dict[str, object] = {}
+    summary_rows: List[Dict[str, Any]] = []
+
+    def record_row(method: str, res_obj, wall_time: float):
+        gibbs = get_total_gibbs_calls(res_obj)
+        summary_rows.append({
+            "method": method,
+            "wall_time_sec": wall_time,
+            "gibbs_calls": gibbs,
+            "sec_per_1k_gibbs": (wall_time / max(gibbs, 1)) * 1000.0,
+            "final_Fmarg": get_final_value(res_obj, "F_list"),
+            "final_trace_err": get_final_value(res_obj, "e_tr_list"),
+        })
 
     # (i) Algorithm 2.2
     print("[Run] Algorithm 2.2 ...")
+    t0 = time.perf_counter()
     res_alg22 = dbga_algorithm_2_2(
         H, gammas, args.eps, dims,
         T=args.T_alg22,
-        tol_tr=args.tol_tr,            # optional early stopping (trace mismatch)
-        delta=args.delta_paper,        # paper parameter
+        tol_tr=args.tol_tr,
+        delta=args.delta_paper,
         gauge_trace0=args.gauge_trace0,
         store_hist=False,
         project_pi=True,
@@ -201,10 +238,13 @@ def run_algorithms(args, H, gammas, dims) -> Dict[str, object]:
         U0=None,
         V0=None,
     )
+    t1 = time.perf_counter()
     results["Alg. 2.2"] = res_alg22
+    record_row("Alg. 2.2", res_alg22, t1 - t0)
 
-    # (ii) KL descent (eta not shown in plot/legend)
+    # (ii) KL descent
     print("[Run] KL descent ...")
+    t0 = time.perf_counter()
     res_kl = potential_marginal_kl_descent(
         H, gammas, args.eps, dims,
         T=args.T_kl,
@@ -214,11 +254,15 @@ def run_algorithms(args, H, gammas, dims) -> Dict[str, object]:
         store_hist=False,
         project_pi=True,
     )
+    t1 = time.perf_counter()
     results["KL descent"] = res_kl
+    record_row("KL descent", res_kl, t1 - t0)
 
-    # (iii) MD-Sinkhorn family: user-specified inner steps
+    # (iii) MD-Sinkhorn family
     for M in args.inner_steps:
-        print(f"[Run] MD-Sinkhorn (inner steps={M}) ...")
+        label = f"MD-Sinkhorn (inner steps={M})"
+        print(f"[Run] {label} ...")
+        t0 = time.perf_counter()
         res_md = md_type_sinkhorn_potential(
             H, gammas, args.eps, dims,
             T_outer=args.T_md,
@@ -232,9 +276,11 @@ def run_algorithms(args, H, gammas, dims) -> Dict[str, object]:
             tol_inner=None,
             project_pi=True,
         )
-        results[f"MD-Sinkhorn (inner steps={M})"] = res_md
+        t1 = time.perf_counter()
+        results[label] = res_md
+        record_row(label, res_md, t1 - t0)
 
-    return results
+    return results, summary_rows
 
 
 # ============================================================
@@ -268,13 +314,11 @@ def plot_curves(args, results: Dict[str, object], out_prefix: str):
     c_kl = colors[1]  # orange-ish
     c_md = colors[2]  # green-ish
 
-    # base styles
     style_map = {
         "Alg. 2.2": dict(color="0.35", linestyle=(0, (5, 3)), zorder=1),
         "KL descent": dict(color=c_kl, linestyle="-", zorder=4),
     }
 
-    # MD styles: same color, different linestyles (up to 3)
     md_linestyles = [
         (0, (5, 2)),  # dashed
         "-",          # solid
@@ -330,6 +374,43 @@ def plot_curves(args, results: Dict[str, object], out_prefix: str):
 
 
 # ============================================================
+# Summary table output
+# ============================================================
+
+def save_summary_csv(rows: List[Dict[str, Any]], out_csv_path: str):
+    os.makedirs(os.path.dirname(out_csv_path), exist_ok=True)
+    fields = ["method", "wall_time_sec", "gibbs_calls", "sec_per_1k_gibbs", "final_Fmarg", "final_trace_err"]
+    with open(out_csv_path, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=fields)
+        w.writeheader()
+        for r in rows:
+            w.writerow(r)
+
+
+def save_summary_tex(rows: List[Dict[str, Any]], out_tex_path: str):
+    os.makedirs(os.path.dirname(out_tex_path), exist_ok=True)
+    lines: List[str] = []
+    lines.append(r"\begin{tabular}{l r r r r r}")
+    lines.append(r"\hline")
+    lines.append(r"Method & time (s) & Gibbs calls & s/1k Gibbs & final $F_{\mathrm{marg}}$ & final trace err \\")
+    lines.append(r"\hline")
+    for r in rows:
+        lines.append(
+            f"{r['method']} & "
+            f"{float(r['wall_time_sec']):.3f} & "
+            f"{int(r['gibbs_calls'])} & "
+            f"{float(r['sec_per_1k_gibbs']):.3f} & "
+            f"{float(r['final_Fmarg']):.3e} & "
+            f"{float(r['final_trace_err']):.3e} \\\\"
+        )
+    lines.append(r"\hline")
+    lines.append(r"\end{tabular}")
+
+    with open(out_tex_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+
+
+# ============================================================
 # Main
 # ============================================================
 
@@ -346,31 +427,21 @@ def main():
     parser.add_argument("--hard_delta", type=float, default=1e-4)
     parser.add_argument("--normalize_cost", action="store_true")
 
-    # unified stopping target (trace mismatch)
     parser.add_argument("--tol_tr", type=float, default=1e-6)
 
-    # Algorithm budgets
     parser.add_argument("--T_alg22", type=int, default=5000)
     parser.add_argument("--T_kl", type=int, default=2000)
     parser.add_argument("--T_md", type=int, default=2000)
 
-    # Algorithm 2.2 params
     parser.add_argument("--delta_paper", type=float, default=1e-6)
     parser.add_argument("--gauge_trace0", action="store_true")
 
-    # KL-descent hyperparam (not shown in figure)
     parser.add_argument("--eta_kl", type=float, default=None)
-
-    # MD-Sinkhorn hyperparams
     parser.add_argument("--eta_inner", type=float, default=1.0)
-
-    # shared jitter
     parser.add_argument("--jitter", type=float, default=1e-12)
 
-    # Plot metric: main = Fmarg; appendix = trace
     parser.add_argument("--metric", type=str, default="Fmarg", choices=["Fmarg", "trace"])
 
-    # MD inner steps: accept either "--inner_steps 1 2 5" or "--inner_steps 1,2,5"
     parser.add_argument(
         "--inner_steps",
         nargs="*",
@@ -399,14 +470,24 @@ def main():
         normalize_cost=args.normalize_cost,
     )
 
-    results = run_algorithms(args, H, gammas, dims)
+    results, summary_rows = run_algorithms(args, H, gammas, dims)
 
     out_prefix = os.path.join(
         args.out_dir,
         f"fig5_1_convergence_{args.metric}_d{args.d}_eps{args.eps:g}_H{hk}_norm{int(args.normalize_cost)}"
     )
+
     plot_curves(args, results, out_prefix)
+
+    # save summary table
+    csv_path = out_prefix + "_summary.csv"
+    tex_path = out_prefix + "_summary.tex"
+    save_summary_csv(summary_rows, csv_path)
+    save_summary_tex(summary_rows, tex_path)
+    print(f"[Saved] {csv_path}")
+    print(f"[Saved] {tex_path}")
 
 
 if __name__ == "__main__":
     main()
+
