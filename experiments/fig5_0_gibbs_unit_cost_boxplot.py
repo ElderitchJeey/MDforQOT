@@ -331,35 +331,67 @@ def boxplot_rel_cost(norm_rows, case_id: str, out_dir: str, title: str):
 
     labels = sorted(labels, key=label_key)
 
+    # --- Short display names for journal readability
+    def short_label(lab: str) -> str:
+        if lab.startswith("BGDA"):
+            return "BGDA"
+        if lab.startswith("KL"):
+            return "KL"
+        if lab.startswith("MD-Sinkhorn"):
+            try:
+                m = int(lab.split("M=")[1].split(")")[0])
+                return f"MD (M={m})"
+            except Exception:
+                return "MD"
+        return lab
+
+    disp_labels = [short_label(lab) for lab in labels]
+
+    # --- Data arrays + sample sizes
     data = []
+    ns = []
     for lab in labels:
-        v = np.array([r["rel_time_per_gibbs"] for r in rows if r["label"] == lab], dtype=float)
+        v = np.array([r["time/gibbs call"] for r in rows if r["label"] == lab], dtype=float)
         v = v[np.isfinite(v)]
         data.append(v)
+        ns.append(int(v.size))
 
     fig, ax = plt.subplots(figsize=(7.2, 4.8))
 
-    ax.boxplot(
+    # --- Standard Tukey boxplot: whis=1.5, show fliers
+    bp = ax.boxplot(
         data,
-        labels=labels,
-        showfliers=False,
-        whis=(10, 90),
+        labels=disp_labels,
+        showfliers=True,
+        whis=1.5,
     )
 
+    # --- Jittered scatter (slightly tighter jitter)
     rng = np.random.default_rng(0)
     for i, v in enumerate(data, start=1):
         if v.size == 0:
             continue
-        x = i + 0.08 * rng.standard_normal(size=v.size)
-        ax.scatter(x, v, s=10, alpha=0.25)
+        x = i + 0.04 * rng.standard_normal(size=v.size)
+        ax.scatter(x, v, s=10, alpha=0.20)
 
+    # --- Reference line
     ax.axhline(1.0, linewidth=1.2, linestyle="--")
-    ax.set_ylabel(r"Relative time per Gibbs call (normalized within each $(N,d,\varepsilon,\mathrm{seed})$)")
+
+    # --- Axis labels (shorter, cleaner)
+    ax.set_ylabel(r"Relative time per Gibbs call (median-normalized per problem instance)")
     ax.set_title(title)
 
-    if len(labels) >= 5:
+    # --- Put sample size above each box
+    y_max = np.nanmax([np.nanmax(v) if v.size else np.nan for v in data])
+    if np.isfinite(y_max):
+        y_text = y_max * 1.05
+        for i, n in enumerate(ns, start=1):
+            ax.text(i, y_text, f"n={n}", ha="center", va="bottom", fontsize=9)
+
+    # --- Rotate x tick labels if needed
+    if len(disp_labels) >= 5:
         for tick in ax.get_xticklabels():
-            tick.set_rotation(20)
+            tick.set_rotation(15)
             tick.set_ha("right")
 
     pdf_path = os.path.join(out_dir, "boxplot_{}.pdf".format(case_id))
