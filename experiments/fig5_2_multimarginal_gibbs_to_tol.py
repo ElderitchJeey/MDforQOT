@@ -387,7 +387,7 @@ def main():
         os.path.join(args.out_dir, f"per_run_{tag}.csv"),
         per_run
     )
-    print(f"[Saved] {os.path.join(args.out_dir, 'per_run.csv')}", flush=True)
+    print(f"[Saved] {os.path.join(args.out_dir, f'per_run_{tag}.csv')}", flush=True)
 
     paper_style()
 
@@ -412,14 +412,14 @@ def main():
     # ---- Gibbs-to-tol: linear + log
     plot_scaling(
         summary_g, key="gibbs_to_tol",
-        out_pdf=os.path.join(args.out_dir, f"fig_multimarginal_gibbs_to_tol_linear_{tag}.pdf")
+        out_pdf=os.path.join(args.out_dir, f"fig_multimarginal_gibbs_to_tol_linear_{tag}.pdf"),
         ylog=False,
         ylabel=r"Gibbs calls to reach $F_{\mathrm{marg}}\leq \tau$",
         title=title,
     )
     plot_scaling(
         summary_g, key="gibbs_to_tol",
-        out_pdf=os.path.join(args.out_dir, "fig_multimarginal_gibbs_to_tol_log_{tag}.pdf"),
+        out_pdf=os.path.join(args.out_dir, f"fig_multimarginal_gibbs_to_tol_log_{tag}.pdf"),
         ylog=True,
         ylabel=r"Gibbs calls to reach $F_{\mathrm{marg}}\leq \tau$",
         title=title,
@@ -428,18 +428,19 @@ def main():
     # ---- Time-to-tol: linear + log
     plot_scaling(
         summary_t, key="time_to_tol",
-        out_pdf=os.path.join(args.out_dir, "fig_multimarginal_time_to_tol_linear_{tag}.pdf"),
+        out_pdf=os.path.join(args.out_dir, f"fig_multimarginal_time_to_tol_linear_{tag}.pdf"),
         ylog=False,
         ylabel=r"Wall-clock time to reach $F_{\mathrm{marg}}\leq \tau$ (sec)",
         title=title,
     )
     plot_scaling(
         summary_t, key="time_to_tol",
-        out_pdf=os.path.join(args.out_dir, "fig_multimarginal_time_to_tol_log_{tag}.pdf"),
+        out_pdf=os.path.join(args.out_dir, f"fig_multimarginal_time_to_tol_log_{tag}.pdf"),
         ylog=True,
         ylabel=r"Wall-clock time to reach $F_{\mathrm{marg}}\leq \tau$ (sec)",
         title=title,
     )
+
 
     print("[Done]", flush=True)
 
