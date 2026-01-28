@@ -8,9 +8,10 @@ Multi-marginal scaling experiment (journal-style):
   - Compare ONLY our solvers: KL-descent vs MD-Sinkhorn (fixed M_inner)
   - Metric for stopping: F_marg <= tau (tau=1e-8 by default)
   - Output per-run CSV + aggregated summary CSV
-  - Generate journal-style line plots:
+  - Generate journal-style line plots (linear + log y):
       (i) Gibbs calls to reach tolerance vs N
      (ii) Wall-clock time to reach tolerance vs N
+  - Annotate hit-rate per point (hit/total across seeds)
 
 Compatibility: Python 3.8+
 """
@@ -19,7 +20,6 @@ from __future__ import print_function
 
 import os
 import sys
-import time
 import csv
 import argparse
 from typing import List, Dict, Tuple
@@ -144,6 +144,11 @@ def first_hit_index(arr: np.ndarray, thresh: float) -> int:
 
 
 def extract_to_tol(res, tau: float) -> Dict[str, float]:
+    """
+    Uses res.F_list trajectory and res.gibbs_calls_list/times (if present).
+    Returns:
+      hit in {0,1}, gibbs_to_tol, time_to_tol, final_F
+    """
     F = np.asarray(getattr(res, "F_list", []), dtype=float)
     t = np.asarray(getattr(res, "times", []), dtype=float)
     g = np.asarray(getattr(res, "gibbs_calls_list", []), dtype=float)
@@ -166,27 +171,118 @@ def extract_to_tol(res, tau: float) -> Dict[str, float]:
 
 
 # ============================================================
-# Aggregation
+# CSV utilities
+# ============================================================
+
+def write_csv(path: str, rows: List[Dict]):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+        w.writeheader()
+        w.writerows(rows)
+
+
+# ============================================================
+# Aggregation (mean/std + hit-rate)
 # ============================================================
 
 def mean_std(vals: np.ndarray) -> Tuple[float, float]:
     vals = vals[np.isfinite(vals)]
     if vals.size == 0:
         return float("nan"), float("nan")
-    return float(vals.mean()), float(vals.std(ddof=1)) if vals.size > 1 else (float(vals[0]), 0.0)
+    if vals.size == 1:
+        return float(vals[0]), 0.0
+    return float(vals.mean()), float(vals.std(ddof=1))
 
 
 def aggregate_by_N(per_run: List[Dict], key: str) -> List[Dict]:
-    groups = {}
+    """
+    Group by (label, N) and aggregate:
+      - key_mean, key_std
+      - n_runs
+      - hit_count, hit_rate
+    """
+    groups: Dict[Tuple[str, int], List[Dict]] = {}
     for r in per_run:
-        groups.setdefault((r["label"], r["N"]), []).append(float(r[key]))
+        groups.setdefault((r["label"], int(r["N"])), []).append(r)
 
-    out = []
-    for (lab, N), v in groups.items():
-        arr = np.asarray(v)
-        mu, sd = mean_std(arr)
-        out.append(dict(label=lab, N=N, **{key + "_mean": mu, key + "_std": sd}))
-    return sorted(out, key=lambda r: (r["label"], r["N"]))
+    out: List[Dict] = []
+    for (lab, N), rows in groups.items():
+        vals = np.asarray([float(rr[key]) for rr in rows], dtype=float)
+        mu, sd = mean_std(vals)
+
+        hits = np.asarray([int(rr.get("hit", 0)) for rr in rows], dtype=int)
+        n_runs = int(len(rows))
+        hit_count = int(hits.sum())
+        hit_rate = float(hit_count) / float(n_runs) if n_runs > 0 else float("nan")
+
+        out.append({
+            "label": lab,
+            "N": int(N),
+            "n_runs": n_runs,
+            "hit_count": hit_count,
+            "hit_rate": hit_rate,
+            f"{key}_mean": mu,
+            f"{key}_std": sd,
+        })
+
+    out.sort(key=lambda rr: (rr["label"], rr["N"]))
+    return out
+
+
+# ============================================================
+# Plotting (lines + error band + hit-rate annotation)
+# ============================================================
+
+def plot_scaling(summary: List[Dict], *, key: str, out_pdf: str, ylog: bool,
+                 ylabel: str, title: str):
+    """
+    key: "gibbs_to_tol" or "time_to_tol"
+    summary rows contain: key_mean, key_std, n_runs, hit_count
+    """
+    fig, ax = plt.subplots(figsize=(6.6, 4.6))
+    labels = sorted({r["label"] for r in summary})
+
+    for lab in labels:
+        pts = [r for r in summary if r["label"] == lab]
+        pts.sort(key=lambda rr: rr["N"])
+
+        x = np.array([r["N"] for r in pts], dtype=float)
+        y = np.array([r[f"{key}_mean"] for r in pts], dtype=float)
+        e = np.array([r[f"{key}_std"] for r in pts], dtype=float)
+
+        ax.plot(x, y, marker="o", label=lab)
+        ax.fill_between(x, y - e, y + e, alpha=0.18)
+
+        # annotate hit-rate as "hit/total" above each marker
+        for r, xi, yi in zip(pts, x, y):
+            hc = int(r.get("hit_count", 0))
+            nr = int(r.get("n_runs", 0))
+
+            # Only annotate non-100% hit rate
+            if nr == 0 or hc == nr:
+                continue
+
+            txt = f"{hc}/{nr}"
+
+            if ylog and np.isfinite(yi) and yi > 0:
+                y_text = yi * 1.12
+            else:
+                y_text = yi + (0.02 * yi if np.isfinite(yi) else 0.0)
+
+            ax.text(xi, y_text, txt, ha="center", va="bottom", fontsize=8)
+    ax.set_xlabel(r"Number of marginals $N$")
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    ax.set_xticks(sorted({int(r["N"]) for r in summary}))
+    ax.legend(loc="best", frameon=True, framealpha=0.95)
+
+    if ylog:
+        ax.set_yscale("log")
+
+    fig.savefig(out_pdf, bbox_inches="tight")
+    plt.close(fig)
+    print(f"[Saved] {out_pdf}", flush=True)
 
 
 # ============================================================
@@ -238,6 +334,7 @@ def main():
                 normalize_cost=args.normalize_cost,
             )
 
+            # KL
             res_kl = potential_marginal_kl_descent(
                 H, gammas, args.eps, dims,
                 T=args.T_kl, eta=args.eta_kl,
@@ -245,6 +342,7 @@ def main():
             )
             to_kl = extract_to_tol(res_kl, args.tau)
 
+            # MD
             res_md = md_type_sinkhorn_potential(
                 H, gammas, args.eps, dims,
                 T_outer=args.T_md, tol_tr=-1.0,
@@ -253,34 +351,83 @@ def main():
             )
             to_md = extract_to_tol(res_md, args.tau)
 
-            per_run += [
-                dict(label="KL descent", N=N, **to_kl),
-                dict(label=f"MD-Sinkhorn (M={args.M_inner})", N=N, **to_md),
-            ]
+            # store per-run (include seed + metadata for reproducibility)
+            per_run.append({
+                "label": "KL descent",
+                "algo": "KL",
+                "N": int(N),
+                "d": int(args.d),
+                "eps": float(args.eps),
+                "seed": int(seed),
+                "tau": float(args.tau),
+                "H_kind": hk,
+                "normalize_cost": int(args.normalize_cost),
+                **to_kl,
+            })
+            per_run.append({
+                "label": f"MD-Sinkhorn (M={args.M_inner})",
+                "algo": "MD",
+                "M_inner": int(args.M_inner),
+                "N": int(N),
+                "d": int(args.d),
+                "eps": float(args.eps),
+                "seed": int(seed),
+                "tau": float(args.tau),
+                "H_kind": hk,
+                "normalize_cost": int(args.normalize_cost),
+                **to_md,
+            })
 
-    # CSV
-    csv_path = os.path.join(args.out_dir, "per_run.csv")
-    with open(csv_path, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=per_run[0].keys())
-        w.writeheader()
-        w.writerows(per_run)
+    # -------------------------
+    # Outputs
+    # -------------------------
+    write_csv(os.path.join(args.out_dir, "per_run.csv"), per_run)
+    print(f"[Saved] {os.path.join(args.out_dir, 'per_run.csv')}", flush=True)
 
-    # Plot
     paper_style()
-    summary = aggregate_by_N(per_run, "gibbs_to_tol")
 
-    fig, ax = plt.subplots(figsize=(6.6, 4.6))
-    for lab in sorted({r["label"] for r in summary}):
-        pts = [r for r in summary if r["label"] == lab]
-        ax.plot([r["N"] for r in pts], [r["gibbs_to_tol_mean"] for r in pts],
-                marker="o", label=lab)
+    # summaries (include hit_rate)
+    summary_g = aggregate_by_N(per_run, "gibbs_to_tol")
+    summary_t = aggregate_by_N(per_run, "time_to_tol")
 
-    ax.set_xlabel(r"Number of marginals $N$")
-    ax.set_ylabel(r"Gibbs calls to reach $F_{\mathrm{marg}}\leq \tau$")
-    ax.legend()
+    write_csv(os.path.join(args.out_dir, "summary_gibbs_to_tol.csv"), summary_g)
+    write_csv(os.path.join(args.out_dir, "summary_time_to_tol.csv"), summary_t)
+    print("[Saved] summary CSVs", flush=True)
 
-    fig.savefig(os.path.join(args.out_dir, "fig_multimarginal_gibbs_to_tol.pdf"))
-    plt.close(fig)
+    title = (rf"Multi-marginal scaling ($d={args.d}$, $\varepsilon={args.eps}$, "
+             rf"$\tau={args.tau:g}$); annotations: hit/total")
+
+    # ---- Gibbs-to-tol: linear + log
+    plot_scaling(
+        summary_g, key="gibbs_to_tol",
+        out_pdf=os.path.join(args.out_dir, "fig_multimarginal_gibbs_to_tol_linear.pdf"),
+        ylog=False,
+        ylabel=r"Gibbs calls to reach $F_{\mathrm{marg}}\leq \tau$",
+        title=title,
+    )
+    plot_scaling(
+        summary_g, key="gibbs_to_tol",
+        out_pdf=os.path.join(args.out_dir, "fig_multimarginal_gibbs_to_tol_log.pdf"),
+        ylog=True,
+        ylabel=r"Gibbs calls to reach $F_{\mathrm{marg}}\leq \tau$",
+        title=title,
+    )
+
+    # ---- Time-to-tol: linear + log
+    plot_scaling(
+        summary_t, key="time_to_tol",
+        out_pdf=os.path.join(args.out_dir, "fig_multimarginal_time_to_tol_linear.pdf"),
+        ylog=False,
+        ylabel=r"Wall-clock time to reach $F_{\mathrm{marg}}\leq \tau$ (sec)",
+        title=title,
+    )
+    plot_scaling(
+        summary_t, key="time_to_tol",
+        out_pdf=os.path.join(args.out_dir, "fig_multimarginal_time_to_tol_log.pdf"),
+        ylog=True,
+        ylabel=r"Wall-clock time to reach $F_{\mathrm{marg}}\leq \tau$ (sec)",
+        title=title,
+    )
 
     print("[Done]", flush=True)
 
