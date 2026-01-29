@@ -172,6 +172,7 @@ def md_type_sinkhorn_potential(
     dims: List[int],
     T_outer: int,
     tol_tr: float,
+    tol_F: Optional[float] = None,
     jitter: float = 1e-12,
     eta_inner: float = 1.0,
     M_inner: int = 1,
@@ -207,9 +208,12 @@ def md_type_sinkhorn_potential(
     t0 = time.time()
 
     def _record(pi_curr: np.ndarray, U_curr: List[np.ndarray]) -> bool:
-        converged, e_tr = _stop_criterion(pi_curr, gammas, dims, tol_tr)
+        converged_tr, e_tr = _stop_criterion(pi_curr, gammas, dims, tol_tr)
         per_i = marginal_trace_errors(pi_curr, gammas, dims)
         Fv = float(F_marg(pi_curr, gammas, dims, jitter=jitter))
+
+        converged_F = (tol_F is not None and Fv <= float(tol_F))
+        converged = bool(converged_tr or converged_F)
 
         F_list.append(Fv)
         e_tr_list.append(float(e_tr))
@@ -270,6 +274,7 @@ def potential_marginal_kl_descent(
     eta: Optional[float] = None,
     jitter_log: float = 1e-12,
     tol_tr: Optional[float] = None,
+    tol_F: Optional[float] = None,
     store_hist: bool = False,
     project_pi: bool = True,
 ) -> PotentialKLDescentResult:
@@ -314,15 +319,19 @@ def potential_marginal_kl_descent(
             pi_list.append(pi.copy())
 
         elapsed = time.time() - t0
-        F_list.append(F_marg(pi, gammas, dims, jitter=jitter_log))
+        Fv = float(F_marg(pi, gammas, dims, jitter=jitter_log))
+        F_list.append(Fv)
         per_i = marginal_trace_errors(pi, gammas, dims)
         per_i_tr_list.append(per_i)
         e_tr = float(np.max(per_i))
         e_tr_list.append(e_tr)
         times.append(elapsed)
         gibbs_calls_list.append(int(PI_COUNTER.n_calls))
+        if tol_F is not None and Fv <= float(tol_F):
+            converged = True
+            break
 
-        if tol_tr is not None and e_tr <= tol_tr:
+        if tol_tr is not None and e_tr <= float(tol_tr):
             converged = True
             break
 
@@ -815,6 +824,7 @@ def dbga_algorithm_2_2(
     dims: List[int],
     T: int = 300,
     tol_tr: Optional[float] = None,
+    tol_F: Optional[float] = None,
     delta: float = 1e-6,
     gauge_trace0: bool = True,
     store_hist: bool = False,
@@ -895,6 +905,8 @@ def dbga_algorithm_2_2(
         return e_tr
 
     e_tr = _record()
+    if tol_F is not None and F_list[-1] <= float(tol_F):
+        converged = True
     if tol_tr is not None and e_tr <= float(tol_tr):
         converged = True
 
@@ -931,6 +943,10 @@ def dbga_algorithm_2_2(
             pi = proj_to_density(pi, jitter=jitter)
 
         e_tr = _record()
+
+        if tol_F is not None and F_list[-1] <= float(tol_F):
+            converged = True
+            break
 
         # stopping: either paper delta OR trace mismatch tol_tr
         if max(normE1, normE2) < float(delta):
