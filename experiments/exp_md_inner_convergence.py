@@ -14,6 +14,10 @@ and produces 4 plots:
   (3) e_i_tr vs Gibbs calls (log y)
   (4) F_i    vs Gibbs calls (log y)
 
+NOTE:
+  - We fix the inner step-size/damping to its default in md_inner_update_i
+    (no eta sweep; eta does not appear in plots/CSV).
+
 Compatibility: Python 3.8+
 """
 
@@ -70,7 +74,6 @@ def _safe_log10(x: float) -> float:
 def plot_curves(
     rows: List[Dict[str, object]],
     eps_list: List[float],
-    eta_list: List[float],
     x_key: str,
     y_key: str,
     title: str,
@@ -81,23 +84,18 @@ def plot_curves(
 ) -> None:
     plt.figure(figsize=(6.6, 4.4))
 
-    # group by (eps, eta)
+    # group by eps only
     for eps in eps_list:
-        for eta in eta_list:
-            sub = [
-                r for r in rows
-                if abs(float(r["eps"]) - eps) < 1e-15
-                and abs(float(r["eta_inner"]) - eta) < 1e-15
-            ]
-            sub.sort(key=lambda r: int(r["inner_step"]))
-            if not sub:
-                continue
+        sub = [r for r in rows if abs(float(r["eps"]) - eps) < 1e-15]
+        sub.sort(key=lambda r: int(r["inner_step"]))
+        if not sub:
+            continue
 
-            xs = [float(r[x_key]) for r in sub]
-            ys = [float(r[y_key]) for r in sub]
+        xs = [float(r[x_key]) for r in sub]
+        ys = [float(r[y_key]) for r in sub]
 
-            lbl = r"$\varepsilon={}$, $\eta={}$".format(eps, eta)
-            plt.plot(xs, ys, marker="o", linewidth=1.6, markersize=3.6, label=lbl)
+        lbl = r"$\varepsilon={}$".format(eps)
+        plt.plot(xs, ys, marker="o", linewidth=1.6, markersize=3.6, label=lbl)
 
     plt.yscale("log")
     plt.grid(True, alpha=0.3)
@@ -122,7 +120,6 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
 
     ap.add_argument("--eps_list", type=str, default="1,0.5,0.3")
-    ap.add_argument("--eta_list", type=str, default="1.0,0.7,0.4")
 
     ap.add_argument("--M_inner", type=int, default=80)
     ap.add_argument("--tol_inner", type=float, default=0.0, help="<=0 disables trace-norm early stop")
@@ -145,7 +142,6 @@ def main():
     N, d, i = int(args.N), int(args.d), int(args.i)
     dims = [d] * N
     eps_list = parse_floats(args.eps_list)
-    eta_list = parse_floats(args.eta_list)
 
     rng = np.random.default_rng(int(args.seed))
 
@@ -177,61 +173,59 @@ def main():
     traj_rows: List[Dict[str, object]] = []
 
     for eps in eps_list:
-        for eta in eta_list:
-            res = md_inner_update_i(
-                i=i,
-                U_list=U_list0,
-                H=H,
-                gamma_i=gamma_i,
-                eps=float(eps),
-                dims=dims,
-                pi0=None,
-                eta_inner=float(eta),
-                M_inner=int(args.M_inner),
-                tol_inner=float(args.tol_inner),
-                tol_F_inner=float(args.tol_F_inner),
-                project_pi=bool(args.project_pi),
-                reset_counter=True,
-                keep_history=True,
+        res = md_inner_update_i(
+            i=i,
+            U_list=U_list0,
+            H=H,
+            gamma_i=gamma_i,
+            eps=float(eps),
+            dims=dims,
+            pi0=None,
+            # eta_inner intentionally NOT passed: fixed internally (eta=1 in your setup)
+            M_inner=int(args.M_inner),
+            tol_inner=float(args.tol_inner),
+            tol_F_inner=float(args.tol_F_inner),
+            project_pi=bool(args.project_pi),
+            reset_counter=True,
+            keep_history=True,
+        )
+
+        # Require the modified solver that records F_i_list
+        if not hasattr(res, "F_i_list"):
+            raise RuntimeError(
+                "md_inner_update_i result has no F_i_list. "
+                "Please modify SolverofEQOT.md_inner_update_i to record and return F_i_list."
             )
 
-            # Require the modified solver that records F_i_list
-            if not hasattr(res, "F_i_list"):
-                raise RuntimeError(
-                    "md_inner_update_i result has no F_i_list. "
-                    "Please modify SolverofEQOT.md_inner_update_i to record and return F_i_list."
-                )
+        e_list = list(res.e_i_tr_list)
+        F_list = list(res.F_i_list)
 
-            e_list = list(res.e_i_tr_list)
-            F_list = list(res.F_i_list)
+        # Align lengths robustly
+        L = min(len(e_list), len(F_list), len(res.times), len(res.gibbs_calls_list))
+        for k in range(L):
+            e = float(e_list[k])
+            F = float(F_list[k])
+            t = float(res.times[k])
+            gc = int(res.gibbs_calls_list[k])
 
-            # Align lengths robustly
-            L = min(len(e_list), len(F_list), len(res.times), len(res.gibbs_calls_list))
-            for k in range(L):
-                e = float(e_list[k])
-                F = float(F_list[k])
-                t = float(res.times[k])
-                gc = int(res.gibbs_calls_list[k])
-
-                traj_rows.append({
-                    "seed": int(args.seed),
-                    "N": N,
-                    "d": d,
-                    "i": i,
-                    "eps": float(eps),
-                    "eta_inner": float(eta),
-                    "M_inner": int(args.M_inner),
-                    "tol_inner": float(args.tol_inner),
-                    "tol_F_inner": float(args.tol_F_inner),
-                    "inner_step": int(k),
-                    "time_sec": t,
-                    "gibbs_calls": gc,
-                    "e_i_tr": e,
-                    "F_i": F,
-                    "log10_e_i_tr": _safe_log10(e),
-                    "log10_F_i": _safe_log10(F),
-                    "converged": int(bool(res.converged)),
-                })
+            traj_rows.append({
+                "seed": int(args.seed),
+                "N": N,
+                "d": d,
+                "i": i,
+                "eps": float(eps),
+                "M_inner": int(args.M_inner),
+                "tol_inner": float(args.tol_inner),
+                "tol_F_inner": float(args.tol_F_inner),
+                "inner_step": int(k),
+                "time_sec": t,
+                "gibbs_calls": gc,
+                "e_i_tr": e,
+                "F_i": F,
+                "log10_e_i_tr": _safe_log10(e),
+                "log10_F_i": _safe_log10(F),
+                "converged": int(bool(res.converged)),
+            })
 
     # ---------- save ----------
     ensure_dir(args.outdir)
@@ -243,7 +237,7 @@ def main():
         csv_path,
         traj_rows,
         fieldnames=[
-            "seed","N","d","i","eps","eta_inner","M_inner","tol_inner","tol_F_inner",
+            "seed","N","d","i","eps","M_inner","tol_inner","tol_F_inner",
             "inner_step","time_sec","gibbs_calls",
             "e_i_tr","F_i","log10_e_i_tr","log10_F_i",
             "converged"
@@ -255,7 +249,6 @@ def main():
     plot_curves(
         rows=traj_rows,
         eps_list=eps_list,
-        eta_list=eta_list,
         x_key="inner_step",
         y_key="e_i_tr",
         title=r"Inner update convergence: $e_i^{\mathrm{tr}}$ vs step",
@@ -269,7 +262,6 @@ def main():
     plot_curves(
         rows=traj_rows,
         eps_list=eps_list,
-        eta_list=eta_list,
         x_key="inner_step",
         y_key="F_i",
         title=r"Inner update convergence: $F_i=\mathrm{KL}(\rho_i\|\gamma_i)$ vs step",
@@ -283,7 +275,6 @@ def main():
     plot_curves(
         rows=traj_rows,
         eps_list=eps_list,
-        eta_list=eta_list,
         x_key="gibbs_calls",
         y_key="e_i_tr",
         title=r"Inner update convergence: $e_i^{\mathrm{tr}}$ vs Gibbs calls",
@@ -297,7 +288,6 @@ def main():
     plot_curves(
         rows=traj_rows,
         eps_list=eps_list,
-        eta_list=eta_list,
         x_key="gibbs_calls",
         y_key="F_i",
         title=r"Inner update convergence: $F_i$ vs Gibbs calls",
