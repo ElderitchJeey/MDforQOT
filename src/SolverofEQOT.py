@@ -600,12 +600,14 @@ def tune_bgda_eta(
 class MDInnerResult:
     i: int
     e_i_tr_list: List[float]
+    F_i_list: List[float]           # NEW: KL mismatch trajectory
     times: List[float]
     pi: np.ndarray
     U_list: List[np.ndarray]
     converged: bool
     gibbs_calls: int
     gibbs_calls_list: List[int]
+
 
 
 def md_inner_update_i(
@@ -620,6 +622,7 @@ def md_inner_update_i(
     eta_inner: float = 1.0,
     M_inner: int = 50,
     tol_inner: Optional[float] = None,
+    tol_F_inner: Optional[float] = None,   # NEW: stopping threshold on F_i = KL(rho_i||gamma_i)
     jitter: float = 1e-12,
     project_pi: bool = True,
     reset_counter: bool = False,
@@ -672,6 +675,7 @@ def md_inner_update_i(
         pi = pi0.copy()
 
     e_list: List[float] = []
+    F_list: List[float] = []        # NEW
     times: List[float] = []
     gibbs_calls_list: List[int] = []
 
@@ -679,21 +683,39 @@ def md_inner_update_i(
 
     def _record(pi_curr: np.ndarray):
         rho_i = partial_trace_except_i(pi_curr, dims, i)
+
+        # trace-norm mismatch (your original metric)
         e_i = float(trace_norm(rho_i - gamma_i))
+
+        # KL mismatch F_i = KL(rho_i || gamma_i) with numerical safeguards
+        rho_pd = proj_to_density(rho_i, jitter=jitter)
+        gam_pd = proj_to_density(gamma_i, jitter=jitter)
+        F_i = float(quantum_KL(rho_pd, gam_pd, jitter=jitter))
+
         if keep_history:
             e_list.append(e_i)
+            F_list.append(F_i)
             times.append(time.time() - t0)
             gibbs_calls_list.append(int(PI_COUNTER.n_calls))
-        return e_i
+        return e_i, F_i
+
 
     # record n=0
-    e0 = _record(pi)
+    e0, F0 = _record(pi)
 
-    converged = (e0 <= float(tol_inner)) if float(tol_inner) > 0 else False
+    use_tr_stop = (tol_inner is not None) and (float(tol_inner) > 0)
+    use_F_stop  = (tol_F_inner is not None) and (float(tol_F_inner) > 0)
+
+    converged = False
+    if use_tr_stop and (e0 <= float(tol_inner)):
+        converged = True
+    if use_F_stop and (F0 <= float(tol_F_inner)):
+        converged = True
+
 
     # inner iterations
     for _n in range(M_inner):
-        if float(tol_inner) > 0 and converged:
+        if converged:
             break
 
         rho_i = partial_trace_except_i(pi, dims, i)
@@ -704,22 +726,42 @@ def md_inner_update_i(
 
         pi = gibbs_state_from_potentials(U_new, H, eps, dims, jitter=jitter, project=project_pi)
 
-        e_i = _record(pi)
-        if float(tol_inner) > 0 and e_i <= float(tol_inner):
+        e_i, F_i = _record(pi)
+
+        if use_tr_stop and (e_i <= float(tol_inner)):
             converged = True
+        if use_F_stop and (F_i <= float(tol_F_inner)):
+            converged = True
+
 
     # If keep_history=False, return only final point (still 1-element lists)
     if not keep_history:
         rho_i = partial_trace_except_i(pi, dims, i)
         e_i = float(trace_norm(rho_i - gamma_i))
+
+        rho_pd = proj_to_density(rho_i, jitter=jitter)
+        gam_pd = proj_to_density(gamma_i, jitter=jitter)
+        F_i = float(quantum_KL(rho_pd, gam_pd, jitter=jitter))
+
         e_list = [e_i]
+        F_list = [F_i]
         times = [time.time() - t0]
         gibbs_calls_list = [int(PI_COUNTER.n_calls)]
-        converged = (e_i <= float(tol_inner)) if float(tol_inner) > 0 else False
+
+        use_tr_stop = (tol_inner is not None) and (float(tol_inner) > 0)
+        use_F_stop  = (tol_F_inner is not None) and (float(tol_F_inner) > 0)
+
+        converged = False
+        if use_tr_stop and (e_i <= float(tol_inner)):
+            converged = True
+        if use_F_stop and (F_i <= float(tol_F_inner)):
+            converged = True
+
 
     return MDInnerResult(
         i=int(i),
         e_i_tr_list=e_list,
+        F_i_list=F_list,                 # NEW
         times=times,
         pi=pi,
         U_list=U_new,
