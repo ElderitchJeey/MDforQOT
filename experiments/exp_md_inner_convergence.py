@@ -98,7 +98,7 @@ def plot_curves(
         plt.plot(xs, ys, marker="o", linewidth=1.6, markersize=3.6, label=lbl)
 
     plt.yscale("log")
-    plt.grid(True, alpha=0.3)
+    #plt.grid(True, alpha=0.3)
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
     plt.title(title)
