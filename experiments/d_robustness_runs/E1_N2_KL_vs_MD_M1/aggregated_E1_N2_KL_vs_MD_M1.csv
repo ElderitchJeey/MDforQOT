@@ -1,0 +1,5 @@
+algo,M_inner,d,hit_k,hit_rate,gibbs_median
+KL,0,2,5,1.0,17.0
+KL,0,3,5,1.0,18.0
+MD,1,2,5,1.0,11.0
+MD,1,3,5,1.0,9.0
