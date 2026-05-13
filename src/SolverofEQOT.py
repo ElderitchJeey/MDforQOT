@@ -286,7 +286,7 @@ def potential_marginal_kl_descent(
     if len(gammas) != N:
         raise ValueError(f"len(gammas)={len(gammas)} must equal len(dims)={N}")
     if eta is None:
-        eta = 1.0 / N
+        eta = eps / N
 
     U_list = [np.zeros((dims[i], dims[i]), dtype=complex) for i in range(N)]
     pi = gibbs_state_from_potentials(U_list, H, eps, dims, jitter=jitter_log, project=project_pi)
