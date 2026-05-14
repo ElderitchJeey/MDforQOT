@@ -1,0 +1,11 @@
+\begin{tabular}{l r r r r r}
+\hline
+Method & time (s) & Gibbs calls & s/1k Gibbs & final $F_{\mathrm{marg}}$ & final trace err \\
+\hline
+Alg. 2.2 & 4.396 & 15002 & 0.293 & 1.288e-05 & 1.174e-03 \\
+KL descent & 0.005 & 10 & 0.510 & 3.058e-13 & 5.964e-07 \\
+MD-Sinkhorn (inner steps=1) & 0.006 & 14 & 0.412 & 1.390e-12 & 3.871e-07 \\
+MD-Sinkhorn (inner steps=5) & 0.010 & 31 & 0.331 & 3.534e-13 & 7.143e-07 \\
+MD-Sinkhorn (inner steps=10) & 0.013 & 34 & 0.375 & 3.530e-13 & 7.143e-07 \\
+\hline
+\end{tabular}
