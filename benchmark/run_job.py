@@ -134,6 +134,11 @@ def main():
         else:
             gibbs_calls_list = list(np.round(np.linspace(0, gibbs_calls, len(F_list))).astype(int))
 
+
+    if method == "SDPLab-Adam":
+        iterations_value = int(getattr(res, "iterations", None) or gibbs_calls)
+    else:
+        iterations_value = max(0, len(F_list) - 1)
     summary = {
         "job_id": str(row["job_id"]),
         "sample_id": str(inst["sample_id"]),
@@ -153,7 +158,7 @@ def main():
         "converged": bool(getattr(res, "converged", False)),
         "hit": bool(diag["hit"]),
         "gibbs_calls": gibbs_calls,
-        "iterations": max(0, len(F_list) - 1),
+        "iterations": iterations_value,
         "time_sec": time_sec,
         "compile_time_sec": compile_time_sec,
         "total_time_sec": total_time_sec,
@@ -163,14 +168,23 @@ def main():
 
     save_summary(summary, summary_path)
 
+
+    dual_obj_hist = getattr(res, "dual_obj", None)
+    grad_norm_hist = getattr(res, "grad_norm", None)
+
+    if dual_obj_hist is not None and len(dual_obj_hist) != len(F_list):
+        dual_obj_hist = None
+    if grad_norm_hist is not None and len(grad_norm_hist) != len(F_list):
+        grad_norm_hist = None
+    
     save_history(
         history_path,
         gibbs_calls=gibbs_calls_list,
         F_list=F_list,
         e_tr_list=e_tr_list,
         times=list(getattr(res, "times", []) or [time_sec]),
-        dual_obj=getattr(res, "dual_obj", None),
-        grad_norm=getattr(res, "grad_norm", None),
+        dual_obj=dual_obj_hist,
+        grad_norm=grad_norm_hist,
     )
 
     print(

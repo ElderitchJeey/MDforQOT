@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import os
+
+os.environ.setdefault("JAX_ENABLE_X64", "True")
+os.environ.setdefault("JAX_PLATFORM_NAME", "cpu")
+
 from dataclasses import dataclass
 from typing import Any, List, Optional, Sequence
 
@@ -264,6 +269,22 @@ def run_sdplab_adam(
         e_tr_list = [float(diag["final_e_tr_max"])]
         gibbs_calls_list = [gibbs_calls]
         times = [run_time]
+
+        # Always append the final point if it is not already present.
+    diag_final = final_diagnostics(
+        pi=pi,
+        H=H,
+        gammas=list(gammas),
+        eps=eps,
+        dims=dims,
+        tol_F=tol_F,
+    )
+
+    if len(gibbs_calls_list) == 0 or int(gibbs_calls_list[-1]) != int(gibbs_calls):
+        F_list.append(float(diag_final["final_F_marg"]))
+        e_tr_list.append(float(diag_final["final_e_tr_max"]))
+        gibbs_calls_list.append(int(gibbs_calls))
+        times.append(float(run_time))
 
     final_hit = bool(F_list[-1] <= float(tol_F))
 

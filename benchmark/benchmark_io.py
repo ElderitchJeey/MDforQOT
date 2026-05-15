@@ -1,158 +1,152 @@
-# benchmark/diagnostics.py
-
+# benchmark/benchmark_io.py
 from __future__ import annotations
 
-from typing import Dict, List, Sequence
+from pathlib import Path
+from typing import Any, Dict, List
 
 import numpy as np
 
-from src.linalg import hermitianize, herm_log, quantum_KL, trace_norm, proj_to_density
-from src.tensor import partial_trace_except_i
+from src.instances import (
+    gen_H_random,
+    gen_H_commuting,
+    gen_H_conjugated_from_diagonal,
+    gen_marginal,
+)
 
 
-def marginal_kl_error(
-    pi: np.ndarray,
-    gammas: Sequence[np.ndarray],
-    dims: Sequence[int],
-    jitter: float = 1e-12,
-) -> float:
+def make_sample_id(
+    N: int,
+    d: int,
+    log_eps: float,
+    seed: int,
+    H_type: str = "random",
+    gamma_kind: str = "medium",
+) -> str:
+    raw = f"N{N}_d{d}_logeps{log_eps:+.2f}_seed{seed}_{H_type}_{gamma_kind}"
+    return raw.replace("+", "p").replace("-", "m").replace(".", "p")
+
+
+def save_eqot_instance(
+    out_dir: str | Path,
+    *,
+    N: int,
+    d: int,
+    log_eps: float,
+    seed: int,
+    H_type: str = "random",
+    gamma_kind: str = "medium",
+    H_scale: float = 1.0,
+    hard_delta: float = 1e-4,
+) -> Dict[str, Any]:
     """
-    F_marg(pi) = sum_i KL(Tr_{neq i} pi || gamma_i).
+    Generate and save one package-independent EQOT benchmark instance.
 
-    This is a benchmark/QOT diagnostic, not an SDPLab core function.
+    Saves:
+        H, gammas, eps, log_eps, dims, N, d, seed, and metadata.
+
+    Returns:
+        A row dictionary suitable for samples.csv.
     """
-    pi = hermitianize(np.asarray(pi, dtype=np.complex128))
-    dims = [int(x) for x in dims]
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
-    if len(gammas) != len(dims):
-        raise ValueError(f"len(gammas)={len(gammas)} but len(dims)={len(dims)}.")
+    rng = np.random.default_rng(int(seed))
+    dims: List[int] = [int(d)] * int(N)
+    eps = float(np.exp(float(log_eps)))
 
-    total = 0.0
-    for i in range(len(dims)):
-        rho_i = partial_trace_except_i(pi, dims, i)
-        rho_i = proj_to_density(rho_i, jitter=jitter)
-        gamma_i = proj_to_density(np.asarray(gammas[i], dtype=np.complex128), jitter=jitter)
-        total += float(quantum_KL(rho_i, gamma_i, jitter=jitter))
+    if H_type == "random":
+        H = gen_H_random(dims, rng, scale=H_scale)
+    elif H_type == "commuting":
+        H = gen_H_commuting(dims, rng, scale=H_scale)
+    elif H_type == "conjugated_diagonal":
+        H = gen_H_conjugated_from_diagonal(dims, rng, scale=H_scale)
+    else:
+        raise ValueError(f"Unknown H_type={H_type!r}.")
 
-    return float(total)
+    gammas = [
+        gen_marginal(
+            int(d),
+            rng,
+            kind=gamma_kind,
+            hard_delta=hard_delta,
+        )
+        for _ in range(int(N))
+    ]
 
+    sample_id = make_sample_id(
+        N=int(N),
+        d=int(d),
+        log_eps=float(log_eps),
+        seed=int(seed),
+        H_type=H_type,
+        gamma_kind=gamma_kind,
+    )
 
-def marginal_trace_errors(
-    pi: np.ndarray,
-    gammas: Sequence[np.ndarray],
-    dims: Sequence[int],
-) -> np.ndarray:
-    """
-    Per-marginal trace-norm errors:
-        ||Tr_{neq i} pi - gamma_i||_1.
-    """
-    pi = hermitianize(np.asarray(pi, dtype=np.complex128))
-    dims = [int(x) for x in dims]
+    path = out_dir / f"{sample_id}.npz"
 
-    if len(gammas) != len(dims):
-        raise ValueError(f"len(gammas)={len(gammas)} but len(dims)={len(dims)}.")
-
-    errs = []
-    for i in range(len(dims)):
-        rho_i = partial_trace_except_i(pi, dims, i)
-        gamma_i = np.asarray(gammas[i], dtype=np.complex128)
-        errs.append(float(trace_norm(rho_i - gamma_i)))
-
-    return np.asarray(errs, dtype=float)
-
-
-def primal_objective(
-    pi: np.ndarray,
-    H: np.ndarray,
-    eps: float,
-    jitter: float = 1e-12,
-) -> float:
-    """
-    Entropic primal objective:
-        P_eps(pi) = Tr(H pi) + eps Tr(pi log pi).
-    """
-    pi = proj_to_density(np.asarray(pi, dtype=np.complex128), jitter=jitter)
-    H = hermitianize(np.asarray(H, dtype=np.complex128))
-    log_pi = herm_log(pi, jitter=jitter)
-
-    val = np.trace(H @ pi).real + float(eps) * np.trace(pi @ log_pi).real
-    return float(val)
-
-
-def density_diagnostics(
-    pi: np.ndarray,
-    jitter: float = 1e-12,
-) -> Dict:
-    """
-    Basic density-matrix sanity checks.
-    """
-    pi = hermitianize(np.asarray(pi, dtype=np.complex128))
-    evals = np.linalg.eigvalsh(pi)
+    np.savez_compressed(
+        path,
+        format_version=np.array("eqot_benchmark_v1"),
+        sample_id=np.array(sample_id),
+        seed=np.array(int(seed), dtype=np.int64),
+        N=np.array(int(N), dtype=np.int64),
+        d=np.array(int(d), dtype=np.int64),
+        dims=np.asarray(dims, dtype=np.int64),
+        eps=np.array(eps, dtype=np.float64),
+        log_eps=np.array(float(log_eps), dtype=np.float64),
+        H=np.asarray(H, dtype=np.complex128),
+        gammas=np.stack(gammas, axis=0).astype(np.complex128),
+        H_type=np.array(H_type),
+        gamma_kind=np.array(gamma_kind),
+        H_scale=np.array(float(H_scale), dtype=np.float64),
+        hard_delta=np.array(float(hard_delta), dtype=np.float64),
+        basis_order=np.array("np.kron_left_to_right"),
+        problem_convention=np.array("normalized_gibbs_trace_one"),
+    )
 
     return {
-        "trace_pi": float(np.trace(pi).real),
-        "min_eig_pi": float(np.min(evals)),
-        "max_eig_pi": float(np.max(evals)),
-        "is_trace_one_tol1e-8": bool(abs(np.trace(pi).real - 1.0) <= 1e-8),
-        "is_psd_tol1e-10": bool(np.min(evals) >= -1e-10),
+        "sample_id": sample_id,
+        "seed": int(seed),
+        "N": int(N),
+        "d": int(d),
+        "log_eps": float(log_eps),
+        "eps": eps,
+        "H_type": H_type,
+        "gamma_kind": gamma_kind,
+        "instance_file": path.as_posix(),
     }
 
 
-def final_diagnostics(
-    pi: np.ndarray,
-    H: np.ndarray,
-    gammas: Sequence[np.ndarray],
-    eps: float,
-    dims: Sequence[int],
-    tol_F: float = 1e-8,
-    jitter: float = 1e-12,
-) -> Dict:
+def load_eqot_instance(path: str | Path) -> Dict[str, Any]:
     """
-    Unified final diagnostics for every solver, including SDPLab.
+    Load one EQOT benchmark instance saved by save_eqot_instance.
     """
-    F = marginal_kl_error(pi, gammas, dims, jitter=jitter)
-    per_i = marginal_trace_errors(pi, gammas, dims)
-    pobj = primal_objective(pi, H, eps, jitter=jitter)
+    path = Path(path)
 
-    out = {
-        "final_F_marg": float(F),
-        "final_e_tr_max": float(np.max(per_i)) if len(per_i) else 0.0,
-        "final_e_tr_sum": float(np.sum(per_i)) if len(per_i) else 0.0,
-        "per_i_trace_errors": per_i.tolist(),
-        "final_primal_obj": float(pobj),
-        "hit": bool(F <= float(tol_F)),
+    if not path.exists():
+        raise FileNotFoundError(f"Instance file not found: {path}")
+
+    data = np.load(path, allow_pickle=False)
+
+    H = np.asarray(data["H"], dtype=np.complex128)
+    gammas_arr = np.asarray(data["gammas"], dtype=np.complex128)
+    gammas = [gammas_arr[i] for i in range(gammas_arr.shape[0])]
+
+    dims = [int(x) for x in np.asarray(data["dims"])]
+
+    return {
+        "format_version": str(data["format_version"]),
+        "sample_id": str(data["sample_id"]),
+        "seed": int(data["seed"]),
+        "N": int(data["N"]),
+        "d": int(data["d"]),
+        "dims": dims,
+        "eps": float(data["eps"]),
+        "log_eps": float(data["log_eps"]),
+        "H": H,
+        "gammas": gammas,
+        "H_type": str(data["H_type"]),
+        "gamma_kind": str(data["gamma_kind"]),
+        "basis_order": str(data["basis_order"]),
+        "problem_convention": str(data["problem_convention"]),
     }
-    out.update(density_diagnostics(pi, jitter=jitter))
-    return out
-
-
-def pi_distance(
-    pi_a: np.ndarray,
-    pi_b: np.ndarray,
-    metric: str = "trace",
-) -> float:
-    """
-    Distance between two final couplings.
-
-    metric:
-        trace: trace norm
-        fro: Frobenius norm
-        op: operator norm
-    """
-    A = hermitianize(np.asarray(pi_a, dtype=np.complex128))
-    B = hermitianize(np.asarray(pi_b, dtype=np.complex128))
-
-    if A.shape != B.shape:
-        raise ValueError(f"pi shapes differ: {A.shape} vs {B.shape}")
-
-    D = A - B
-    m = metric.lower().strip()
-
-    if m in {"trace", "tr", "1", "nuclear"}:
-        return float(trace_norm(D))
-    if m in {"fro", "frob", "f"}:
-        return float(np.linalg.norm(D, ord="fro"))
-    if m in {"op", "spec", "2"}:
-        return float(np.linalg.norm(D, ord=2))
-
-    raise ValueError(f"Unknown metric={metric}. Use trace, fro, or op.")
