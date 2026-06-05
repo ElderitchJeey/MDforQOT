@@ -1,0 +1,92 @@
+JAX sees: [CudaDevice(id=0)]  default: gpu
+JAX sees devices: [CudaDevice(id=0)]
+===============================================================================
+                                     CVXPY                                     
+                                     v1.6.4                                    
+===============================================================================
+(CVXPY) Apr 30 04:35:18 PM: Your problem has 32 variables, 65536 constraints, and 0 parameters.
+(CVXPY) Apr 30 04:35:18 PM: It is compliant with the following grammars: DCP, DQCP
+(CVXPY) Apr 30 04:35:18 PM: (If you need to solve this problem multiple times, but with different data, consider using parameters.)
+(CVXPY) Apr 30 04:35:18 PM: CVXPY will first compile your problem; then, it will invoke a numerical solver to obtain a solution.
+(CVXPY) Apr 30 04:35:18 PM: Your problem is compiled with the CPP canonicalization backend.
+-------------------------------------------------------------------------------
+                                  Compilation                                  
+-------------------------------------------------------------------------------
+(CVXPY) Apr 30 04:35:18 PM: Compiling problem (target solver=MOSEK).
+(CVXPY) Apr 30 04:35:18 PM: Reduction chain: FlipObjective -> Dcp2Cone -> CvxAttr2Constr -> ConeMatrixStuffing -> MOSEK
+(CVXPY) Apr 30 04:35:18 PM: Applying reduction FlipObjective
+(CVXPY) Apr 30 04:35:18 PM: Applying reduction Dcp2Cone
+(CVXPY) Apr 30 04:35:18 PM: Applying reduction CvxAttr2Constr
+(CVXPY) Apr 30 04:35:18 PM: Applying reduction ConeMatrixStuffing
+(CVXPY) Apr 30 04:35:18 PM: Applying reduction MOSEK
+(CVXPY) Apr 30 04:35:18 PM: Finished problem compilation (took 2.175e-01 seconds).
+-------------------------------------------------------------------------------
+                                Numerical solver                               
+-------------------------------------------------------------------------------
+(CVXPY) Apr 30 04:35:18 PM: Invoking solver MOSEK  to obtain a solution.
+
+
+(CVXPY) Apr 30 04:35:18 PM: Problem
+(CVXPY) Apr 30 04:35:18 PM:   Name                   :                 
+(CVXPY) Apr 30 04:35:18 PM:   Objective sense        : maximize        
+(CVXPY) Apr 30 04:35:18 PM:   Type                   : CONIC (conic optimization problem)
+(CVXPY) Apr 30 04:35:18 PM:   Constraints            : 24              
+(CVXPY) Apr 30 04:35:18 PM:   Affine conic cons.     : 0               
+(CVXPY) Apr 30 04:35:18 PM:   Disjunctive cons.      : 0               
+(CVXPY) Apr 30 04:35:18 PM:   Cones                  : 0               
+(CVXPY) Apr 30 04:35:18 PM:   Scalar variables       : 0               
+(CVXPY) Apr 30 04:35:18 PM:   Matrix variables       : 1 (scalarized: 32896)
+(CVXPY) Apr 30 04:35:18 PM:   Integer variables      : 0               
+(CVXPY) Apr 30 04:35:18 PM: 
+(CVXPY) Apr 30 04:35:18 PM: Optimizer started.
+(CVXPY) Apr 30 04:35:18 PM: Presolve started.
+(CVXPY) Apr 30 04:35:18 PM: Linear dependency checker started.
+(CVXPY) Apr 30 04:35:18 PM: Linear dependency checker terminated.
+(CVXPY) Apr 30 04:35:18 PM: Eliminator started.
+(CVXPY) Apr 30 04:35:18 PM: Freed constraints in eliminator : 0
+(CVXPY) Apr 30 04:35:18 PM: Eliminator terminated.
+(CVXPY) Apr 30 04:35:18 PM: Eliminator - tries                  : 1                 time                   : 0.00            
+(CVXPY) Apr 30 04:35:18 PM: Lin. dep.  - tries                  : 1                 time                   : 0.00            
+(CVXPY) Apr 30 04:35:18 PM: Lin. dep.  - primal attempts        : 1                 successes              : 1               
+(CVXPY) Apr 30 04:35:18 PM: Lin. dep.  - dual attempts          : 0                 successes              : 0               
+(CVXPY) Apr 30 04:35:18 PM: Lin. dep.  - primal deps.           : 0                 dual deps.             : 0               
+(CVXPY) Apr 30 04:35:18 PM: Presolve terminated. Time: 0.00    
+(CVXPY) Apr 30 04:35:18 PM: Optimizer  - threads                : 4               
+(CVXPY) Apr 30 04:35:18 PM: Optimizer  - solved problem         : the primal      
+(CVXPY) Apr 30 04:35:18 PM: Optimizer  - Constraints            : 24              
+(CVXPY) Apr 30 04:35:18 PM: Optimizer  - Cones                  : 0               
+(CVXPY) Apr 30 04:35:18 PM: Optimizer  - Scalar variables       : 0                 conic                  : 0               
+(CVXPY) Apr 30 04:35:18 PM: Optimizer  - Semi-definite variables: 1                 scalarized             : 32896           
+(CVXPY) Apr 30 04:35:18 PM: Factor     - setup time             : 0.00            
+(CVXPY) Apr 30 04:35:18 PM: Factor     - dense det. time        : 0.00              GP order time          : 0.00            
+(CVXPY) Apr 30 04:35:18 PM: Factor     - nonzeros before factor : 300               after factor           : 300             
+(CVXPY) Apr 30 04:35:18 PM: Factor     - dense dim.             : 0                 flops                  : 9.73e+06        
+(CVXPY) Apr 30 04:35:18 PM: ITE PFEAS    DFEAS    GFEAS    PRSTATUS   POBJ              DOBJ              MU       TIME  
+(CVXPY) Apr 30 04:35:18 PM: 0   1.3e+02  9.0e+00  1.0e+00  0.00e+00   -0.000000000e+00  -0.000000000e+00  1.0e+00  0.01  
+(CVXPY) Apr 30 04:35:18 PM: 1   2.0e+00  1.4e-01  1.2e-01  -9.98e-01  1.146258488e+02   5.781714155e+01   1.5e-02  0.04  
+(CVXPY) Apr 30 04:35:18 PM: 2   7.9e-01  5.6e-02  8.3e-03  1.66e+00   4.204937629e+01   4.049197072e+01   6.2e-03  0.07  
+(CVXPY) Apr 30 04:35:18 PM: 3   2.1e-01  1.5e-02  1.5e-03  4.38e+00   1.467883173e+01   1.377444034e+01   1.6e-03  0.10  
+(CVXPY) Apr 30 04:35:18 PM: 4   7.8e-02  5.5e-03  3.9e-04  1.01e+00   1.320644363e+01   1.279738708e+01   6.1e-04  0.12  
+(CVXPY) Apr 30 04:35:18 PM: 5   2.3e-02  1.6e-03  4.1e-05  1.02e+00   1.295219201e+01   1.290215764e+01   1.8e-04  0.15  
+(CVXPY) Apr 30 04:35:18 PM: 6   2.1e-03  1.5e-04  1.2e-06  1.01e+00   1.279861876e+01   1.279353246e+01   1.7e-05  0.18  
+(CVXPY) Apr 30 04:35:18 PM: 7   1.9e-04  1.3e-05  3.2e-08  9.89e-01   1.278362877e+01   1.278316696e+01   1.5e-06  0.20  
+(CVXPY) Apr 30 04:35:18 PM: 8   6.5e-06  4.6e-07  2.1e-10  9.97e-01   1.278209275e+01   1.278207639e+01   5.1e-08  0.23  
+(CVXPY) Apr 30 04:35:19 PM: 9   8.8e-07  6.2e-08  1.1e-11  9.99e-01   1.278204874e+01   1.278204652e+01   6.9e-09  0.26  
+(CVXPY) Apr 30 04:35:19 PM: 10  1.4e-07  9.9e-09  6.3e-13  1.00e+00   1.278204575e+01   1.278204544e+01   1.1e-09  0.29  
+(CVXPY) Apr 30 04:35:19 PM: 11  5.6e-09  4.0e-10  4.9e-15  1.00e+00   1.278204549e+01   1.278204548e+01   4.4e-11  0.31  
+(CVXPY) Apr 30 04:35:19 PM: 12  4.9e-10  8.4e-10  1.3e-16  1.00e+00   1.278204548e+01   1.278204548e+01   3.8e-12  0.34  
+(CVXPY) Apr 30 04:35:19 PM: Optimizer terminated. Time: 0.34    
+(CVXPY) Apr 30 04:35:19 PM: 
+(CVXPY) Apr 30 04:35:19 PM: 
+(CVXPY) Apr 30 04:35:19 PM: Interior-point solution summary
+(CVXPY) Apr 30 04:35:19 PM:   Problem status  : PRIMAL_AND_DUAL_FEASIBLE
+(CVXPY) Apr 30 04:35:19 PM:   Solution status : OPTIMAL
+(CVXPY) Apr 30 04:35:19 PM:   Primal.  obj: 1.2782045483e+01    nrm: 6e-01    Viol.  con: 5e-09    barvar: 0e+00  
+(CVXPY) Apr 30 04:35:19 PM:   Dual.    obj: 1.2782045482e+01    nrm: 2e+01    Viol.  con: 0e+00    barvar: 9e-09  
+-------------------------------------------------------------------------------
+                                    Summary                                    
+-------------------------------------------------------------------------------
+(CVXPY) Apr 30 04:35:19 PM: Problem status: optimal
+(CVXPY) Apr 30 04:35:19 PM: Optimal value: -1.278e+01
+(CVXPY) Apr 30 04:35:19 PM: Compilation took 2.175e-01 seconds
+(CVXPY) Apr 30 04:35:19 PM: Solver (including time spent in interface) took 3.638e-01 seconds
