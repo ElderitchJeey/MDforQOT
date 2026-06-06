@@ -65,6 +65,13 @@ For the current qubit mixed HPC grid, the four default tasks are
 sbatch experiments/paper79_reproduction/hpc/submit_qubit_mixed_array.sbatch
 ```
 
+The current HPC scripts are:
+
+- `submit_qubit_mixed_array.sbatch`: `N=4,8`, `ising/random`, `mixed`, `eps=1e-3`
+- `submit_qubit_mixed_N6N7_array.sbatch`: `N=6,7`, `ising/random`, `mixed`, `eps=1e-3`
+- `submit_qubit_eps_array.sbatch`: `N=4`, `ising/random`, `mixed`, `eps in {1e-4,1e-8,1e-12}`
+- `submit_wasserstein_array.sbatch`: Wasserstein/channel `WP,WM,WC,WG`, `d=20`, `eps=1e-3`
+
 To inspect the task mapping locally:
 
 ```bash
