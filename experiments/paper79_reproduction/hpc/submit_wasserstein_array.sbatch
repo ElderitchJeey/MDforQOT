@@ -25,6 +25,6 @@ python -m experiments.paper79_reproduction.hpc.run_wasserstein_task \
   --cases WP,WM,WC,WG \
   --d 20 \
   --method_group all \
-  --T_kl 30000 \
-  --T_md 30000 \
-  --lbfgs_max_iter 10000
+  --T_kl 100000 \
+  --T_md 100000 \
+  --lbfgs_max_iter 100000
