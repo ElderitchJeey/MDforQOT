@@ -26,7 +26,7 @@ python -m experiments.paper79_reproduction.hpc.run_qubit_mixed_task \
   --kinds ising,random \
   --seeds 0 \
   --method_group all \
-  --T_kl 3000 \
-  --T_md 3000 \
-  --lbfgs_max_iter 1000 \
+  --T_kl 30000 \
+  --T_md 30000 \
+  --lbfgs_max_iter 10000 \
   --outdir results/hpc_qubit_mixed_N6N7
