@@ -142,6 +142,8 @@ class PotentialKLDescentResult:
     converged: bool = False
     gibbs_calls: int = 0
     gibbs_calls_list: Optional[List[int]] = None
+    eta: float = 0.0
+    eta_rule: str = ""
 
 
 
@@ -265,6 +267,30 @@ def md_type_sinkhorn_potential(
 # Algorithm (1): Potential marginal KL descent (your "KL algorithm")
 # ============================================================
 
+def _resolve_kl_eta(eps: float, N: int, eta: Optional[float], eta_rule: str) -> Tuple[float, str]:
+    if eps <= 0:
+        raise ValueError("eps must be positive.")
+    if N <= 0:
+        raise ValueError("N must be positive.")
+    if eta is not None:
+        return float(eta), "manual"
+
+    normalized_rule = eta_rule.lower().replace("-", "_").strip()
+    aliases = {
+        "eps_over_n": "eps_over_N",
+        "eps/n": "eps_over_N",
+        "theory": "eps_over_N",
+        "default": "eps_over_N",
+        "eps": "eps",
+    }
+    resolved = aliases.get(normalized_rule)
+    if resolved is None:
+        raise ValueError("eta_rule must be one of 'eps_over_N' or 'eps'.")
+    if resolved == "eps":
+        return float(eps), resolved
+    return float(eps) / float(N), resolved
+
+
 def potential_marginal_kl_descent(
     H: np.ndarray,
     gammas: List[np.ndarray],
@@ -272,6 +298,7 @@ def potential_marginal_kl_descent(
     dims: List[int],
     T: int = 200,
     eta: Optional[float] = None,
+    eta_rule: str = "eps_over_N",
     jitter_log: float = 1e-12,
     tol_tr: Optional[float] = None,
     tol_F: Optional[float] = None,
@@ -280,13 +307,17 @@ def potential_marginal_kl_descent(
 ) -> PotentialKLDescentResult:
     """
     U_i <- U_i - eta (log rho_i - log gamma_i),  pi <- Gibbs(U).
+
+    Step-size choices:
+      - eta=None, eta_rule="eps_over_N": eta = eps / N (theoretical default)
+      - eta=None, eta_rule="eps":        eta = eps (relaxed experimental option)
+      - eta=<float>:                     manual override
     """
     PI_COUNTER.reset()
     N = len(dims)
     if len(gammas) != N:
         raise ValueError(f"len(gammas)={len(gammas)} must equal len(dims)={N}")
-    if eta is None:
-        eta = eps / N
+    eta, resolved_eta_rule = _resolve_kl_eta(eps, N, eta, eta_rule)
 
     U_list = [np.zeros((dims[i], dims[i]), dtype=complex) for i in range(N)]
     pi = gibbs_state_from_potentials(U_list, H, eps, dims, jitter=jitter_log, project=project_pi)
@@ -347,6 +378,8 @@ def potential_marginal_kl_descent(
         converged=converged,
         gibbs_calls=PI_COUNTER.n_calls,
         gibbs_calls_list=gibbs_calls_list,
+        eta=float(eta),
+        eta_rule=resolved_eta_rule,
     )
 
 
