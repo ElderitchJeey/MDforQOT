@@ -183,6 +183,7 @@ def md_type_sinkhorn_potential(
     keep_pi_hist: bool = False,
     tol_inner: Optional[float] = None,
     project_pi: bool = True,
+    U0: Optional[List[np.ndarray]] = None,
 ) -> MDsinkhornResult:
     if abs(eta_inner - 1.0) > 1e-12:
         raise ValueError("This file enforces eta_inner=1.")
@@ -196,7 +197,17 @@ def md_type_sinkhorn_potential(
     if len(gammas) != N:
         raise ValueError(f"len(gammas)={len(gammas)} must equal len(dims)={N}")
 
-    U_list = [np.zeros((dims[i], dims[i]), dtype=complex) for i in range(N)]
+    if U0 is None:
+        U_list = [np.zeros((dims[i], dims[i]), dtype=complex) for i in range(N)]
+    else:
+        if len(U0) != N:
+            raise ValueError(f"len(U0)={len(U0)} must equal len(dims)={N}")
+        U_list = []
+        for i, Ui in enumerate(U0):
+            Ui_arr = np.asarray(Ui, dtype=complex)
+            if Ui_arr.shape != (dims[i], dims[i]):
+                raise ValueError(f"U0[{i}] must have shape {(dims[i], dims[i])}, got {Ui_arr.shape}")
+            U_list.append(hermitianize(Ui_arr.copy()))
     pi = gibbs_state_from_potentials(U_list, H, eps, dims, jitter=jitter, project=project_pi)
 
     F_list: List[float] = []
@@ -304,6 +315,7 @@ def potential_marginal_kl_descent(
     tol_F: Optional[float] = None,
     store_hist: bool = False,
     project_pi: bool = True,
+    U0: Optional[List[np.ndarray]] = None,
 ) -> PotentialKLDescentResult:
     """
     U_i <- U_i - eta (log rho_i - log gamma_i),  pi <- Gibbs(U).
@@ -319,7 +331,17 @@ def potential_marginal_kl_descent(
         raise ValueError(f"len(gammas)={len(gammas)} must equal len(dims)={N}")
     eta, resolved_eta_rule = _resolve_kl_eta(eps, N, eta, eta_rule)
 
-    U_list = [np.zeros((dims[i], dims[i]), dtype=complex) for i in range(N)]
+    if U0 is None:
+        U_list = [np.zeros((dims[i], dims[i]), dtype=complex) for i in range(N)]
+    else:
+        if len(U0) != N:
+            raise ValueError(f"len(U0)={len(U0)} must equal len(dims)={N}")
+        U_list = []
+        for i, Ui in enumerate(U0):
+            Ui_arr = np.asarray(Ui, dtype=complex)
+            if Ui_arr.shape != (dims[i], dims[i]):
+                raise ValueError(f"U0[{i}] must have shape {(dims[i], dims[i])}, got {Ui_arr.shape}")
+            U_list.append(hermitianize(Ui_arr.copy()))
     pi = gibbs_state_from_potentials(U_list, H, eps, dims, jitter=jitter_log, project=project_pi)
 
     F_list = [F_marg(pi, gammas, dims, jitter=jitter_log)]

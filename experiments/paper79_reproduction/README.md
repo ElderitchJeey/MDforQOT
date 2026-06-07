@@ -72,6 +72,17 @@ The current HPC scripts are:
 - `submit_qubit_eps_array.sbatch`: `N=4`, `ising/random`, `mixed`, `eps in {1e-4,1e-8,1e-12}`
 - `submit_wasserstein_array.sbatch`: Wasserstein/channel `WP,WM,WC,WG`, `d=20`, `eps=1e-3`
 
+Warm-start comparison scripts use matched annealed warm starts with
+`eps0=1`, `q=10`, and `max_inner=100000`: `KL eta=eps/N` is warmed by
+`KL eta=eps/N`, `KL eta=eps` is warmed by `KL eta=eps`, and
+`MD M=1,2,5` are warmed by their corresponding MD inner step counts.
+The method-neutral implementation lives in `src/annealed_solvers.py`.
+
+- `submit_warm_qubit_mixed_array.sbatch`: warm/cold `N=4,8` qubit mixed
+- `submit_warm_qubit_mixed_N6N7_array.sbatch`: warm/cold `N=6,7` qubit mixed
+- `submit_warm_qubit_eps_array.sbatch`: warm/cold small-epsilon stress path
+- `submit_warm_wasserstein_array.sbatch`: warm/cold Wasserstein/channel cases
+
 To inspect the task mapping locally:
 
 ```bash
