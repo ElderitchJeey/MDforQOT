@@ -245,6 +245,7 @@ def run_instance_for_eps(args: argparse.Namespace, *, experiment: str, index: in
                     tol_F=args.tol_f,
                     store_hist=False,
                     project_pi=True,
+                    max_gibbs_calls=getattr(args, "max_gibbs_calls", None),
                 )
                 row = summarize_solver_result(
                     label=label,
@@ -279,6 +280,7 @@ def run_instance_for_eps(args: argparse.Namespace, *, experiment: str, index: in
                     keep_pi_hist=False,
                     tol_inner=args.tol_inner,
                     project_pi=True,
+                    max_gibbs_calls=getattr(args, "max_gibbs_calls", None),
                 )
                 row = summarize_solver_result(
                     label=f"MD-Sinkhorn (M={int(M_inner)})",

@@ -72,6 +72,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--T_kl", type=int, default=3000)
     parser.add_argument("--T_md", type=int, default=3000)
     parser.add_argument("--lbfgs_max_iter", type=int, default=1000)
+    parser.add_argument("--max_gibbs_calls", type=int, default=None)
+    parser.add_argument("--tol_tr", type=float, default=1e-4)
+    parser.add_argument("--tol_f", type=float, default=1e-8)
     parser.add_argument("--tol_inner", type=float, default=1e-4)
     parser.add_argument("--outdir", type=Path, default=Path("results") / "hpc_qubit_mixed")
     return parser
@@ -119,12 +122,18 @@ def main() -> None:
         str(args.T_md),
         "--lbfgs_max_iter",
         str(args.lbfgs_max_iter),
+        "--tol_tr",
+        str(args.tol_tr),
+        "--tol_f",
+        str(args.tol_f),
         "--tol_inner",
         str(args.tol_inner),
         "--out",
         str(out),
         *method_args(args.method_group),
     ]
+    if args.max_gibbs_calls is not None:
+        cmd.extend(["--max_gibbs_calls", str(args.max_gibbs_calls)])
 
     print(" ".join(cmd), flush=True)
     if args.dry_run:

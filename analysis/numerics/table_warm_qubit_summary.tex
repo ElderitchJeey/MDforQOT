@@ -1,0 +1,20 @@
+\begin{table}
+\caption{Cold and annealed matched warm-start variants on available qubit benchmarks. Annealed cost includes all warm-start stages.}
+\label{tab:warm-qubit}
+\begin{tabular}{llrlllll}
+\toprule
+Method & Mode & Rows & $E_{\rm tr}\le 10^{-4}$ & $E_{\rm tr}$ & $F_{\rm marg}$ & Total Gibbs & Total time (s) \\
+\midrule
+KL descent (eta=eps) & cold & 13 & 54\% & 9.62e-05 & 1.00e-08 & 58747 & 92.5 \\
+KL descent (eta=eps) & annealed & 13 & 54\% & 9.65e-05 & 1.00e-08 & 19639 & 188.2 \\
+KL descent (eta=eps/N) & cold & 13 & 54\% & 9.62e-05 & 1.00e-08 & 65442 & 177.7 \\
+KL descent (eta=eps/N) & annealed & 13 & 54\% & 9.69e-05 & 1.00e-08 & 78839 & 213.7 \\
+MD-Sinkhorn (M=1) & cold & 13 & 62\% & 1.00e-04 & 3.72e-08 & 37116 & 214.6 \\
+MD-Sinkhorn (M=1) & annealed & 13 & 69\% & 1.00e-04 & 3.99e-08 & 35430 & 443.2 \\
+MD-Sinkhorn (M=2) & cold & 13 & 69\% & 9.99e-05 & 3.53e-08 & 37132 & 374.7 \\
+MD-Sinkhorn (M=2) & annealed & 13 & 69\% & 1.00e-04 & 3.98e-08 & 56043 & 762.6 \\
+MD-Sinkhorn (M=5) & cold & 13 & 69\% & 9.99e-05 & 3.68e-08 & 37190 & 451.8 \\
+MD-Sinkhorn (M=5) & annealed & 13 & 69\% & 1.00e-04 & 3.99e-08 & 45426 & 571.8 \\
+\bottomrule
+\end{tabular}
+\end{table}

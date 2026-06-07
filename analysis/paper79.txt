@@ -1,0 +1,1985 @@
+OPT2025: 17th Annual Workshop on Optimization for Machine Learning
+
+Quantum Optimal Transport: Regularization and Algorithms
+Pavlo Pelikh
+
+PPELIKH @ UOTTAWA . CA
+
+University of Ottawa
+Augusto Gerolin
+University of Ottawa
+Instituto Nacional de Matemática Pura e Aplicada
+
+AGEROLIN @ UOTTAWA . CA , GEROLIN @ IMPA . BR
+
+Abstract
+Quantum Optimal Transport (QOT) extends optimal transport to quantum data such as states and
+channels. In this paper, we develop and benchmark computational algorithms for QOT, focusing
+on the quantum analog of the Sinkhorn algorithm [12]. Applications include the QOT between
+quantum channels [14] and spin systems, where numerical tests show accurate and efficient performance. Our work bridges quantum information, convex optimization, and statistical physics,
+providing practical tools for quantum machine learning and machine learning for quantum data.
+
+1. Introduction
+Let N ∈ N be a natural number and denote by [N ] := {1, . . . , N } an index set with N elements. Consider N complex finite-dimensional Hilbert spaces Cd of dimension d ∈ N and
+N
+let
+ D =d×dd be the† dimension of the composite system. For all i ∈ [N ], let γi ∈ dDd =
+, A ≽ 0, Tr [A] = 1 be a density matrix on the i-th Hilbert space C . Let
+A∈C
+A = AD×D
+A = A† be the Hermitian (cost) operator of dimension D.
+H ∈ HD = A ∈ C
+The main goal of this work is to develop novel optimization methods and computational algorithm
+for the following Quantum Optimal Transport (QOT) problem [11]
+PQ
+H (γ1 , . . . , γN ) = min{Tr [HΓ] : Γ 7→ (γ1 , . . . , γN )},
+Γ
+
+(1)
+
+where the symbol Γ 7→ (γ1 , . . . , γN ) denotes the set of N −particle density matrix Γ ∈ DD in CD
+having the i−th partial traces Tri [Γ] = γi , ∀ i ∈ [N ], i.e. for any B ∈ Hd and any i ∈ [N ], i.e.
+ 
+
+i−1
+N
+O
+O
+Tr Γ 
+1j ⊗ B ⊗
+1j  = Tr [Bγi ] .
+(2)
+j=1
+
+j=i+1
+
+We say that Γ is a quantum coupling of γ1 , . . . , γN , since they can be interpreted as the quantum
+analog of transport plans or couplings in optimal transport theory. The partial trace conditions
+in (2) are the quantum analog of marginals in probability theory. The QOT problem (1) admits a
+(non-unique) minimizer and can be interpreted as a semidefinite program (SDP) [11, Theorem 3.1].
+
+© A. Gerolin.
+
+Q UANTUM O PTIMAL T RANSPORT: R EGULARIZATION AND A LGORITHMS
+
+Originating in non-commutative probability and quantum Markov semigroups [8, 13], QOT has
+been recently applied to quantum information [1, 10, 14, 15, 18], statistical mechanics [5, 6], electronic structure theory [17], and quantum machine learning [9, 20, 21]. Several formulations can be
+viewed as quantum analogs of Wasserstein distances in optimal transport for probability measures.
+Main Contributions. We introduce and benchmark two mathematically rigorous computational algorithms for Quantum Optimal Transport (QOT): (i) Subgradient ascent for eigenvalue-regularized
+QOT (Section 2.1). This method is particularly effective when the primal solution is expected to be
+rank-1, see Proposition 1 for details; (ii) L-BFGS for von Neumann entropy regularized QOT (Section 2.2), which is the quantum analogue of the celebrated Shannon-entropy regularized OT [12].
+In Section 3, we present extensive numerical experiments on quantum channels [14], spin systems,
+and random Hamiltonians, systematically comparing the two approaches.
+
+2. Computational algorithms and Regularized Quantum Optimal Transport
+Our algorithms rely on the dual formulation of (1), see Theorem 3.2 in [11].
+(N
+)
+N
+X
+M
+DQ
+sup
+Tr [Ui γi ] : Ui ∈ Hd and Heff := H −
+Ui ≽ 0 ,
+H (γ1 , . . . , γN ) =
+U1 ,...,UN
+
+i=1
+
+(3)
+
+i=1
+
+where Heff is the effective Hamiltonian.
+L
+The dual variables {Ui }N
+as Kantorovich operators. The symbol N
+i=1 are referred
+i=1 Ui denotes the
+NN
+PN Ni−1
+LN
+1
+.
+See
+the
+Theorem
+3.2 in [11]
+1
+⊗
+U
+⊗
+U
+=
+Kronecker sum, i.e.
+i
+j=i+1 j
+j=1 j
+i=1
+i=1 i
+for the proof of strong duality and complementary slackness.
+In the following, we briefly introduce the two computational algorithms. For details, we refer to the
+supplementary material.
+2.1. Eigenvalue Penalization.
+Our first method penalizes the lowest eigenvalue of Heff in (3) to enforce rank-1 primal–dual optimality – see the Prop. 1 in the supplementary material S1 for a rigorous justification
+reg
+DH
+:
+
+N
+ą
+
+Hd → R,
+
+reg
+DH
+(U1 , . . . , UN ) =
+
+i=1
+
+N
+X
+
+Tr [Ui γi ] + λeff
+1 (U1 , . . . , UN ),
+
+(4)
+
+i=1
+
+
+ef f ψ⟩ : ψ ∈ CD and ∥ψ∥ = 1 is the smallest eigenvalue
+where λeff
+1 (U1 , . . . , UN ) = min ⟨ψ, H
+of Heff . Then, the problem reduces to solve the following unconstrained maximization problem
+reg
+sup DH
+(U1 , . . . , UN ) = sup
+
+Ui ∈Hd
+
+inf L(U1 , . . . , UN , ψ),
+
+Ui ∈Hd ψ∈H:
+∥ψ∥=1
+
+PN
+LN
+D
+i=1 Hn × C → R is L(U1 , . . . , UN , ψ) =
+i=1 Tr [Ui γi ] + ⟨ψ, (H −
+i=1 Ui )ψ⟩.
+reg
+The functional DH
+is jointly concave, but its subdifferential is not necessarily a singleton, since
+reg
+the smallest eigenvalue of Heff is, in general, degenerate. The subgradient (G1 , . . . , GN ) of DH
+where L :
+
+ŚN
+
+(5)
+
+2
+
+Q UANTUM O PTIMAL T RANSPORT: R EGULARIZATION AND A LGORITHMS
+
+is given by Gi = γi − Tri [|ψ1 ⟩ ⟨ψ1 |], where ψ1 ∈ argminψ∈CD , ∥ψ∥=1 ⟨ψ, (H −
+Proposition 2 in the supplementary material S2.
+
+LN
+
+i=1 Ui )ψ⟩, see
+
+We solve (5) via subgradient ascent with Polyak step sizes [2]. Each iteration requires the smallest
+eigenpair, computed with stochastic Lanczos [22]. The algorithm stops when the gradient norm is
+below tolerance or iterations are exhausted. Updates (Prop. 2) and step-size estimates are given in
+Algorithm 1, implemented in JAX [3].
+2.2. Von Neumann Entropy Regularization of Quantum Optimal Transport.
+The dual formulation of the von Neumman regularized QOT is given by [7, 17]
+N
+X
+
+reg
+DQ
+H,ε = sup DH,ε (U1 , . . . , UN ) := sup
+
+Ui ∈Hd i=1
+
+Ui ∈Hd
+
+
+
+
+Heff
+Tr [Ui γi ] − ε log Tr exp −
+,
+ε
+
+(6)
+
+Q
+where DQ
+H,ε = DH,ε (γ1 , . . . , γN ) is the cost and Heff is the effective Hamiltonian defined in (3).
+reg
+The dual functional DH,ε
+in (6) is differentiable and strictly concave and the dual problem DQ
+H,ε (6)
+admits a unique maximizer (up to trivial translations) [17], see also S4) and Theorem 4).
+h
+
+i
+reg
+reg
+= γi − Zε−1 Tri exp − Hεeff ,
+with respect to Ui is given by ∇Ui DH,ε
+The gradient of DH,ε
+h
+
+i
+with Zε = Tr exp − Hεeff
+(Prop. 3). We solve (6) using the L-BFGS algorithm [23] from
+Optax [16]. The stopping criteria matches the subgradient method.
+
+Finally, notice the right-hand side in equation (6) can be interpreted as a softmin regularization
+(log-sum-exp term). Indeed, any sequence (Uiε )i∈N of maximizing the entropy-regularized QOT
++
+(6) DQ
+H,ε (γ1 , . . . , γN ) converges to (Ui )i∈N a maximizer of the QOT problem (3) when ε → 0 [7].
+In particular, the following limit
+
+
+ eff 
+D
+X
+λ
+Heff
+lim ε log Tr exp −
+= lim ε log
+exp − k
+= λeff
+1 ,
++
++
+ε
+ε
+ε→0
+ε→0
+
+
+(7)
+
+k=1
+
+converges to the smallest eigenvalue of the effective Hamiltonian Heff , where in (7) λeff
+1 ≤ ··· ≤
+eff
+λD are the eigenvalues of Heff . The smaller ε, the closer entropy regularized QOT approaches
+unregularized QOT - see Figure 1.
+
+3. Numerical experiments
+We investigate three distinct classes of QOT problems: (i) QOT between quantum channels governed
+by a Hamiltonian formulated in terms of quadrature
+operators [14], see eq. (8); (ii) QOT in spin systems
+described by the Ising model Hamiltonian; (iii) QOT
+with random Hamiltonians. A performance comparison between the two algorithms introduced in the
+3
+
+Q
+Figure 1: Absolute error |DQ
+H − DH,ε | between
+the QOT problem (3) and the entropy
+regularized QOT (6) as a function of ε, for the
+Ising Hamiltonian example in Section 3.2.
+
+Q UANTUM O PTIMAL T RANSPORT: R EGULARIZATION AND A LGORITHMS
+
+previous sections for (i)–(ii) is presented in Table 1. Numerical results for (iii) are given in the
+supplementary material S8. Closed-form solutions and SDP solvers are used as benchmarks for
+evaluating the performance of our computational algorithms. All experiments were conducted on a
+server equipped with an NVIDIA H100 NVL Tensor Core GPU.
+3.1. Quantum Optimal Transport between quantum channels.
+The first set of experiments focuses on the problem of Quantum Optimal Transport between quantum channels, as introduced by G. De Palma and D. Trevisan in [14] – see also [25].
+Consider N = 2 identical Hilbert spaces L2 (Rm ), where m ∈ N. Let {Qj }j∈[m] and {Pj }j∈[m] be
+the position and momentum operators, respectively. These act on functions ψ ∈ L2 (Rm ) as
+(Qj ψ)(q) = qj ψ(q), and (Pj ψ)(q) = −i
+
+∂
+ψ(q),
+∂qj
+
+∀ j ∈ [m], q = (q1 , . . . , qm ) ∈ Rm .
+
+The Hamiltonian (cost) operator is defined through the quadrature operators as
+H=
+
+m
+X
+
+Qi ⊗ 1 − 1
+
+i=1
+
+m
+X
+
+T 2
+⊗ Qi +
+i=1
+
+Pi ⊗ 1 − 1 ⊗ PiT
+
+2
+
+.
+
+(8)
+
+To obtain a finite-dimensional discretization of L2 (Rm ), we adopt the Fock basis {|1⟩ , . . . , |d⟩},
+corresponding to the first d eigenstates of the harmonic oscillator Hamiltonian Hho = 21 (Q2 +
+P 2 ). The Hilbert space of each subsystem is then spanned by these d basis vectors, and is thus
+2
+identified with Cd . Thus, the Hilbert space of the composite system is Cd , with canonical basis
+{|i⟩ ⊗ |j⟩}i,j∈[d] . The finite-dimensional representation of the cost is given by H(ij)(kl) = ⟨i ⊗
+j, H k ⊗ l⟩, ∀ i, j, k, l ∈ [d], resulting in a Hermitian matrix H ∈ Hd2 .
+For our simulations, we fix d = 50 and consider the following cases for the marginals γ1 , γ2 ∈ Dd ,
+see example 1 in the supplementary material for the definition of a thermal state.
+• WP: Both marginals are thermal states at temperature zero, i.e. γ1 = γ2 = |0⟩⟨0|.
+• WM: γ1 is a thermal state at temperature zero; γ2 = 1d is the maximally mixed state.
+• WC: The marginals γ1 = γ2 are cat states, i.e. γi = Tri [|ψcat (2)⟩ ⟨ψcat (2)|] , i ∈ [2], where
+|α|2 P
+d−1 √
+αk
+|ψcat (α)⟩ = |α⟩ ⊗ |α⟩ + |−α⟩ ⊗ |−α⟩ , |α⟩ = e− 2
+k=0 k! |k⟩ normalized to 1.
+• WG: The marginals γ1 = γ2 are taken from a GHZ state, i.e.
+√
+γi = Tri [|ψGHZ ⟩ ⟨ψGHZ |] , i ∈ [2], where |ψGHZ ⟩ = |0,0⟩+|1,1⟩
+.
+2
+Notice that, when γ1 and γ2 are thermal states, the QOT coupling is also a thermal state [14], see
+also Example 1 in the supplementary material. The results are summarized next page on Table 1.
+The convergence plots are given in the Figure 2.
+3.2. Multi-marginal Quantum Optimal Transport for the Ising Model
+Consider a one-dimensional lattice with N sites, each occupied by an electron with spin si ∈
+{−1, +1}, i ∈ [N ]. Each site is associated with a two-dimensional Hilbert space C2 , and the
+Hilbert space of the composite system is the tensor product (C2 )⊗N . The Hamiltonian is given by
+
+
+N
+−1
+N
+i−1
+N
+X
+X
+O
+O
+1 0
+Z Z
+Z
+Z
+Z
+Z
+H = −J
+σi σi+1 − h
+σi , σi =
+1⊗σ ⊗
+1, with σ =
+. (9)
+0 −1
+i=1
+
+i=1
+
+j=1
+
+4
+
+j=i+1
+
+Q UANTUM O PTIMAL T RANSPORT: R EGULARIZATION AND A LGORITHMS
+
+Test Rank Tol. M Time Iters Ach. Err.
+1e-3 S 0.057
+97 Yes 1.6e-06
+1e-4 S 0.067 121 Yes 1.4e-08
+1e-5 S 0.078 149 Yes 2.0e-09
+1e-6 S 0.095 196 Yes 2.6e-11
+WP 1
+1e-3 L 0.187
+2 Yes 3.6e-03
+1e-4 L 0.190
+2 Yes 3.6e-03
+1e-5 L 0.191
+2 Yes 3.6e-03
+1e-6 L 0.194
+2 Yes 3.6e-03
+1e-3 S 0.194 449 Yes 3.7e-04
+1e-4 S 0.274 658 Yes 1.4e-07
+1e-5 S 0.322 781 Yes 8.0e-10
+1e-6 S 0.379 931 Yes 2.9e-11
+WG 1
+1e-3 L 0.182
+2 Yes 3.6e-03
+1e-4 L 0.182
+2 Yes 3.6e-03
+1e-5 L 0.184
+2 Yes 3.6e-03
+1e-6 L 0.184
+2 Yes 3.6e-03
+1e-3 S 0.185 198 Yes 2.0e-05
+1e-4 S 0.426 543 Yes 5.0e-07
+1e-5 S 0.857 1149 Yes 5.9e-09
+1e-6 S 1.281 1813 Yes 7.9e-11
+IG
+1
+1e-3 L 1.597
+2 Yes 2.1e-11
+1e-4 L 1.636
+2 Yes 2.1e-11
+1e-5 L 1.654
+2 Yes 2.1e-11
+1e-6 L 1.624
+2 Yes 2.1e-11
+1e-3 S 0.150 148 Yes 4.5e-06
+1e-4 S 0.480 625 Yes 7.7e-07
+1e-5 S 1.186 1647 Yes 4.3e-08
+1e-6 S 1.251 1741 Yes 5.1e-10
+IE
+1
+1e-3 L 1.212
+4 Yes 1.8e-02
+1e-4 L 1.358
+5 Yes 2.0e-05
+1e-5 L 1.373
+5 Yes 2.0e-05
+1e-6 L 1.984
+7 Yes 4.1e-10
+
+Test Rank Tol. M
+Time
+Iters Ach. Err.
+1e-3 S
+0.206
+493 Yes 1.7e-04
+1e-4 S
+0.256
+616 Yes 2.3e-05
+1e-5 S
+0.378
+931 Yes 4.4e-09
+1e-6 S
+0.390
+964 Yes 2.1e-09
+WC 2
+1e-3 L
+0.181
+2 Yes 3.6e-03
+1e-4 L
+0.988
+6 Yes 1.3e-09
+1e-5 L
+2.133
+27 Yes 2.0e-09
+1e-6 L
+54.985
+296 Yes 2.1e-09
+1e-3 S 194.245 500000 No 1.9e+00
+1e-4 S 193.805 500000 No 1.9e+00
+1e-5 S 194.505 500000 No 1.9e+00
+1e-6 S 193.867 500000 No 1.9e+00
+WM 50
+1e-3 L 628.555 10000 No 8.0e-01
+1e-4 L 628.508 10000 No 8.0e-01
+1e-5 L 628.046 10000 No 8.0e-01
+1e-6 L 628.109 10000 No 8.0e-01
+1e-3 S
+0.160
+157 Yes 8.7e-06
+1e-4 S
+0.263
+306 Yes 1.7e-07
+1e-5 S
+0.400
+504 Yes 1.7e-09
+1e-6 S
+0.541
+711 Yes 8.7e-11
+IM
+1
+1e-3 L
+1.086
+4 Yes 1.7e-03
+1e-4 L
+1.270
+5 Yes 3.9e-04
+1e-5 L
+1.417
+6 Yes 9.0e-07
+1e-6 L
+2.055
+7 Yes 3.5e-10
+1e-3 S
+11.708 16735 Yes 1.1e-05
+1e-4 S
+17.761 25457 Yes 2.8e-07
+1e-5 S
+25.883 37097 Yes 2.8e-10
+1e-6 S
+32.273 46262 Yes 7.8e-12
+IT 233
+1e-3 L 2840.952 10000 No 3.1e-02
+1e-4 L 2837.323 10000 No 3.1e-02
+1e-5 L 2822.841 10000 No 3.1e-02
+1e-6 L 2827.996 10000 No 3.1e-02
+
+Table 1: Performance comparison between the subgradient and L-BFGS (with von Neumann entropy regularization) algorithms on QOT problems. The columns are as follows: Test – identifier
+of the test instance; Rank – rank of the QOT coupling in 1 returned by the ground-truth solution
+(MOSEK [24]); Tol. – gradient norm threshold; M – method used (S for subgradient, L for LBFGS); Time – wall-clock runtime in seconds; Iters – number of iterations; Ach. – whether the
+method met the target tolerance; Err. – final absolute difference between the objective value and
+the ground truth.
+where J ∈ R controls the nearest-neighbor coupling and h ∈ R the external field strength. These
+operators correspond to a spin measurement in the Z-direction at site i ∈ [N ].
+For our numerical experiments, we fix N = 12 and consider the following test cases for the
+marginals, derived from low-energy eigenstates ψ1 , . . . , ψl of the Ising Hamiltonain (9), with l ≤
+2N (arranged in ascending eigenvalue order), and thermal mixtures:
+• IG: The marginals γk = Trk [|ψ1 ⟩ ⟨ψ1 |], for all k ∈ [N ].
+• IE: The marginals γk = Trk [|ψ
+ 2 ⟩ ⟨ψ2 |], for all k ∈ [N ].
+• IM: The marginals γk = Trk 12 |ψ1 ⟩ ⟨ψ1 | + 12 |ψ2 ⟩ ⟨ψ2 | , for all k ∈ [N ].
+5
+
+Q UANTUM O PTIMAL T RANSPORT: R EGULARIZATION AND A LGORITHMS
+
+Hho
+
+• IT: γk = e− k /Zk is a thermal state at temperature k ∈ [N ].
+The corresponding results are summarized in Table 1 in the next page.
+
+Figure 2: Optimality gap |dn − d∗ | versus iteration for the subgradient method (green) and L-BFGS
+on the tests in Sections 3.1, 3.2. Here dn is the objective at iteration n, d∗ the MOSEK ground truth,
+and ε = 10−12 .
+
+4. Discussion, conclusion and future work
+We propose two computational approaches based on the dual formulation of Quantum Optimal
+Transport: a subgradient method for the eigenvalue-regularized formulation, and a von Neumann
+entropy–regularized solved via L-BFGS. Our experiments demonstrate that von Neumann entropy
+regularization is broadly applicable and generally converges in fewer iterations, though at the expense of a significantly higher per-iteration computational cost. In contrast, the subgradient method
+is particularly effective when the optimal coupling is (or can be well-approximated by) a rank-1
+operator, providing an efficient alternative in such settings. Future work will address scalability in
+high-dimensional regimes and exploit problem structure in applications such as electronic structure
+and machine learning. Furthermore, we will concentrate on generalizing our regularization methodology to quantum optimization problems that are commonly formulated as semi-definite programs.
+Future applications includes machine learning, for instance, quantum Wasserstein generative adversarial networks [9], where QOT defines the training objective. The von Neumann–regularized QOT
+provides a smooth, differentiable loss between quantum data, while the subgradient formulation
+offers an efficient approximation scheme suitable for large-scale or iterative learning settings.
+
+5. Acknowledgments
+PP and AG thank the Natural Sciences and Engineering Research Council of Canada (NSERC)
+for financial support under the Multi-Marginal Optimal Transport grant (Grant No. RGPIN-202205207), the Mitacs Accelerate Program, and the Canada Research Chairs Program (Grant No. CRC2021-00234). AG also thanks the NSERC Alliance grant (Grant No. ALLRP/592521-2023) and the
+National Research Council of Canada (Grant No. AQC-208-1). Part of this research was conducted
+while the authors were visiting the Institute for Pure and Applied Mathematics (IPAM), which is
+supported by the National Science Foundation (Grant No. DMS-1925919).
+
+6
+
+Q UANTUM O PTIMAL T RANSPORT: R EGULARIZATION AND A LGORITHMS
+
+References
+[1] Emily Beatty and Daniel Stilck França. Order p quantum Wasserstein distances from couplings. In Annales Henri Poincaré, pages 1–59. Springer, 2025.
+[2] Stephen Boyd. Subgradient methods. Lecture notes for EE364b, Stanford University,
+Accessed 2025. URL https://web.stanford.edu/class/ee364b/lectures/
+subgrad_method_notes.pdf.
+[3] James Bradbury, Roy Frostig, Peter Hawkins, Matthew James Johnson, Chris Leary, Dougal Maclaurin, George Necula, Adam Paszke, Jake VanderPlas, Skye Wanderman-Milne, and
+Qiao Zhang. JAX: composable transformations of Python+NumPy programs, 2018. URL
+http://github.com/jax-ml/jax.
+[4] Jonatan Bohr Brask. Gaussian states and operations – a quick reference. arXiv preprint
+arXiv:2102.05748 [quant-ph], 2022. URL https://arxiv.org/abs/2102.05748.
+[5] E. Caglioti, F. Golse, and T. Paul. Quantum optimal transport is cheaper. Journal of Statistical
+Physics, 181(1):149–162, 2020. doi: 10.1007/s10955-020-02571-7. URL https://doi.
+org/10.1007/s10955-020-02571-7.
+[6] Emanuele Caglioti, François Golse, and Thierry Paul. Towards optimal transport for quantum
+densities. Annali della Scuola Normale Superiore di Pisa, Classe di Scienze, XXIV(4):1981–
+2045, 2023. ISSN 2036-2145. doi: 10.2422/2036-2145.202106 011. URL https://doi.
+org/10.2422/2036-2145.202106_011. Submitted: Jun 9, 2021; Accepted: May 10,
+2022; Published: Dec 29, 2023.
+[7] Emanuele Caputo, Augusto Gerolin, Nataliia Monina, and Lorenzo Portinale. Quantum optimal transport with convex regularization. arXiv preprint arXiv:2409.03698 [math-ph], 2024.
+URL https://arxiv.org/abs/2409.03698.
+[8] Eric A. Carlen and Jan Maas. An analog of the 2-Wasserstein metric in non-commutative
+probability under which the fermionic Fokker–Planck equation is gradient flow for the entropy. Communications in Mathematical Physics, 331(3):887–926, 2014. doi: 10.1007/
+s00220-014-2124-8. URL https://doi.org/10.1007/s00220-014-2124-8.
+[9] Shouvanik Chakrabarti, Huang Yiming, Tongyang Li, Soheil Feizi, and Xiaodi Wu. Quantum Wasserstein generative adversarial networks. Advances in Neural Information Processing
+Systems, 32, 2019.
+[10] Yongxin Chen, Tryphon T Georgiou, and Allen Tannenbaum. Matrix optimal mass transport:
+a quantum mechanical approach. IEEE Transactions on Automatic Control, 63(8):2612–2619,
+2017.
+[11] Sam Cole, Michał Eckstein, Shmuel Friedland, and Karol Życzkowski. On quantum optimal
+transport. Mathematical Physics, Analysis and Geometry, 26(2):14, 2023. doi: 10.1007/
+s11040-023-09456-7. URL https://doi.org/10.1007/s11040-023-09456-7.
+[12] Marco Cuturi. Sinkhorn distances: Lightspeed computation of optimal transport. Advances in
+neural information processing systems, 26, 2013.
+7
+
+Q UANTUM O PTIMAL T RANSPORT: R EGULARIZATION AND A LGORITHMS
+
+[13] Francesco D’andrea, Pierre Martinetti, et al. A view on optimal transport from noncommutative geometry. SIGMA. Symmetry, Integrability and Geometry: Methods and Applications, 6:
+057, 2010.
+[14] Giacomo De Palma and Dario Trevisan. Quantum optimal transport with quantum channels.
+Annales Henri Poincaré, 22(10):3199–3234, 2021. doi: 10.1007/s00023-021-01042-3. URL
+https://doi.org/10.1007/s00023-021-01042-3.
+[15] Giacomo De Palma and Dario Trevisan. The wasserstein distance of order 1 for quantum
+spin systems on infinite lattices. In Annales Henri Poincaré, volume 24, pages 4237–4282.
+Springer, 2023.
+[16] DeepMind, Igor Babuschkin, Kate Baumli, Alison Bell, Surya Bhupatiraju, Jake Bruce, Peter Buchlovsky, David Budden, Trevor Cai, Aidan Clark, Ivo Danihelka, Antoine Dedieu,
+Claudio Fantacci, Jonathan Godwin, Chris Jones, Ross Hemsley, Tom Hennigan, Matteo Hessel, Shaobo Hou, Steven Kapturowski, Thomas Keck, Iurii Kemaev, Michael King, Markus
+Kunesch, Lena Martens, Hamza Merzic, Vladimir Mikulik, Tamara Norman, George Papamakarios, John Quan, Roman Ring, Francisco Ruiz, Alvaro Sanchez, Laurent Sartran, Rosalia
+Schneider, Eren Sezener, Stephen Spencer, Srivatsan Srinivasan, Miloš Stanojević, Wojciech
+Stokowiec, Luyu Wang, Guangyao Zhou, and Fabio Viola. The DeepMind JAX Ecosystem,
+2020. URL http://github.com/google-deepmind.
+[17] Dario Feliciangeli, Augusto Gerolin, and Lorenzo Portinale. A non-commutative entropic
+optimal transport approach to quantum composite systems at positive temperature. Journal of
+Functional Analysis, 285(4):1–39, August 2023. ISSN 0022-1236. doi: 10.1016/j.jfa.2023.
+109963.
+[18] Tryphon T Georgiou and Michele Pavon. Positive contraction mappings for classical and
+quantum Schrödinger systems. Journal of Mathematical Physics, 56(3), 2015.
+[19] J Robert Johansson, Paul D Nation, and Franco Nori. Qutip: An open-source python framework for the dynamics of open quantum systems. Computer physics communications, 183(8):
+1760–1772, 2012.
+[20] Wiktor Jurasz and Christian B Mendl. Quantum Wasserstein gans for state preparation at
+unseen points of a phase diagram. arXiv preprint arXiv:2309.09543, 2023.
+[21] Bobak Toussi Kiani, Giacomo De Palma, Milad Marvian, Zi-Wen Liu, and Seth Lloyd. Learning quantum data with the quantum earth mover’s distance. Quantum Science and Technology,
+7(4):045002, 2022.
+[22] J. Kuczyński and H. Woźniakowski. Estimating the largest eigenvalue by the power and Lanczos algorithms with a random start. SIAM Journal on Matrix Analysis and Applications, 13
+(4):1094–1122, 2025/04/30 1992.
+[23] Dong C. Liu and Jorge Nocedal. On the limited memory BFGS method for large scale optimization. Mathematical Programming, 45(1):503–528, 1989.
+[24] MOSEK ApS. MOSEK Optimization Suite, 2025. URL https://www.mosek.com/.
+Version 10.1.
+8
+
+Q UANTUM O PTIMAL T RANSPORT: R EGULARIZATION AND A LGORITHMS
+
+[25] Dario Trevisan. Quantum optimal transport: an invitation. Bollettino dell’Unione Matematica
+Italiana, 18(1):347–360, 2025. doi: 10.1007/s40574-024-00428-5. URL https://doi.
+org/10.1007/s40574-024-00428-5.
+
+9
+
+Q UANTUM O PTIMAL T RANSPORT: R EGULARIZATION AND A LGORITHMS
+
+Supplementary Material
+S1
+
+Saddle Point of the Quantum Optimal Transport Lagrangian
+
+Proposition 1 Let d, N ∈ N be the natural numbers, D = dN , γ1 , . . . , γN ∈ Dd be density
+matrices, H ∈ Hd be a Hermitian cost operator. Let Ui∗ ∈ Hd , i ∈ [N ] and ψ ∗ ∈ CD be the saddle
+point of the Lagrangian:
+L:
+
+N
+ą
+
+d
+
+Hd × C → R,
+
+L(U1 , . . . , UN , ψ) =
+
+i=1
+
+N
+X
+
+Tr [Ui γi ] + ⟨ψ, (H −
+
+N
+M
+
+i=1
+
+Ui )ψ⟩. (S10)
+
+i=1
+
+∗ is the solution of (3).
+Then |ψ ∗ ⟩ ⟨ψ ∗ | is the solution of (1), and U1∗ , . . . , UN
+
+Proof Let Ui∗ ∈ Hd , i ∈ [N ] and ψ ∗ ∈ CD be the saddle point of (S10). Then, for any Ui ∈
+Hd , i ∈ [N ] and for any unit vector ψ ∈ CD holds
+∗
+∗
+L(U1 , . . . , UN , ψ ∗ ) ≤ L(U1∗ , . . . , UN
+, ψ ∗ ) ≤ L(U1∗ , . . . , UN
+, ψ).
+
+However, we need to show that for any Ui ∈ Hd , i ∈ [N ] and for any Γ ∈ DD holds
+∗
+∗
+LQOT (U1 , . . . , UN , |ψ ∗ ⟩ ⟨ψ ∗ |) ≤ LQOT (U1∗ , . . . , UN
+, |ψ ∗ ⟩ ⟨ψ ∗ |) ≤ LQOT (U1∗ , . . . , UN
+, Γ),
+
+where
+LQOT (U1 , . . . , UN , Γ) :
+
+N
+ą
+
+Hd × DD
+
+i=1
+N
+X
+
+LQOT (U1 , . . . , UN , Γ) =
+
+(S11)
+"
+
+Tr [Ui γi ] + Tr (H −
+
+i=1
+
+N
+M
+
+#
+Ui )Γ
+
+i=1
+
+is a Lagrangian of QOT problem (1). The left inequality we already have due to the fact that
+L(U1 , . . . , UN , ψ) = LQOT (U1 , . . . , UN , |ψ⟩ ⟨ψ|). So, it suffices to show only the right one.
+P
+For any Γ = D
+j=1 λj |ϕj ⟩ ⟨ϕj | ∈ DD and Ui ∈ Hd , i ∈ [N ], the (S11) reads
+LQOT (U1 , . . . , UN , Γ)
+"
+#
+N
+N
+X
+M
+=
+Tr [Ui γi ] + Tr (H −
+Ui )Γ
+i=1
+
+=
+
+N
+X
+
+i=1
+
+Tr [Ui γi ] +
+
+i=1
+
+=
+
+D
+X
+j=1
+
+=
+
+D
+X
+
+D−1
+X
+
+λj ⟨ϕj , (H −
+
+j=0
+
+λj
+
+N
+X
+
+N
+M
+
+Tr [Ui γi ] + ⟨ϕj , (H −
+
+i=1
+
+Ui )ϕj ⟩
+
+i=1
+N
+M
+i=1
+
+λj L(U1 , . . . , UN , ϕj ).
+
+j=1
+
+1
+
+!
+Ui )ϕj ⟩
+
+(Since
+
+D
+X
+j=1
+
+λj = 1)
+
+Q UANTUM O PTIMAL T RANSPORT: R EGULARIZATION AND A LGORITHMS
+
+Thus, we have
+D
+X
+
+∗
+LQOT (U1∗ , . . . , UN
+, |ψ ∗ ⟩ ⟨ψ ∗ |) =
+
+∗
+λj L(U1∗ , . . . , UN
+, ψ∗)
+
+j=1
+D
+X
+
+≤
+
+∗
+λj L(U1∗ , . . . , UN
+, ϕj )
+
+j=1
+∗
+= LQOT (U1∗ , . . . , UN
+, Γ),
+∗ , |ψ ∗ ⟩ ⟨ψ ∗ |) is a saddle point for LQOT . Thus, |ψ ∗ ⟩ ⟨ψ ∗ | miniwhich proves that (U1∗ , . . . , UN
+∗
+∗
+mizes (1), and U1 , . . . , UN maximizes (3).
+
+S2
+
+Properties of the Eigenvalue Regularized Dual Functional
+
+Proposition 2 Let d, N ∈ N be the natural numbers, D = dN , γ1 , . . . , γN ∈ Dd be density
+reg
+matrices, H ∈ HD be a Hermitian operator, and DH
+be the dual functional defined in (4). Then
+reg
+1. DH
+is a jointly concave function and bounded from above by the primal problem (1).
+L
+2. Let Gi = γi − Tri [|ψ1 ⟩ ⟨ψ1 |], where ψ1 ∈ Argminψ∈CD : ⟨ψ, (H − N
+i=1 Ui )ψ⟩. Then,
+∥ψ∥=1
+
+reg
+at (U1 , . . . , UN ). Moreover, for every i ∈ [N ], Gi is
+(G1 , . . . , GN ) is a subgradient of DH
+traceless, that is Tr [Gi ] = 0, and its the norm of (G1 , . . . GN ) is bounded by
+N
+X
+
+2
+
+Λi − Λ 2 ≤
+
+i=1
+
+where Λi = (λi1 , . . . , λid ), Λ = 1/N
+for all i ∈ [N ].
+
+N
+X
+
+∥Gi ∥22 ≤ 4N,
+
+i=1
+
+PN
+
+i
+i
+i=1 Λi , and λ1 ≤ · · · ≤ λd are the eigenvalues of γi ,
+
+L
+reg
+(U1 , . . . , UN ) = D( N
+Proof Let’s prove the first statement. Note that since DH
+i=1 Ui ), where
+"
+D : HD → R,
+
+D(B) = Tr B
+
+N
+O
+i=1
+
+2
+
+#
+γi + min ⟨ψ, (H − B)ψ⟩.
+ψ∈CD
+∥ψ∥=1
+
+Q UANTUM O PTIMAL T RANSPORT: R EGULARIZATION AND A LGORITHMS
+
+It is enough to show only the concavity of D(B). Let B1 , B2 ∈ HD , α ∈ [0, 1], then
+"
+#
+N
+O
+D(αB1 + (1 − α)B2 ) = Tr (B1 + (1 − α)B2 )
+γi + min ⟨ψ, (H − (αB1 + (1 − α)B2 )) ψ⟩
+ψ∈CD
+∥ψ∥=1
+
+i=1
+
+"
+= α Tr B1
+
+N
+O
+
+#
+
+"
+
+γi + (1 − α) Tr B2
+
+N
+O
+
+#
+γi
+
+i=1
+
+i=1
+
++ min ⟨ψ, (α(H − B1 ) + (1 − α)(H − B2 )) ψ⟩
+ψ∈CD
+∥ψ∥=1
+
+"
+≥ α Tr B1
+
+N
+O
+
+#
+
+"
+
+γi + (1 − α) Tr B2
+
+N
+O
+
+#
+γi
+
+i=1
+
+i=1
+
++ α min ⟨ψ, (H − B1 )ψ⟩ + (1 − α) min ⟨ψ, (H − B2 )ψ⟩
+ψ∈CD
+∥ψ∥=1
+
+ψ∈CD
+∥ψ∥=1
+
+= αD(B1 ) + (1 − α)D(B2 ).
+This follows from the linearity of the trace and the fact that the sum of minima is less than or equal
+to the minimum of the sum.
+Consequently, for any α ∈ [0, 1], Ui1 , Ui2 ∈ Hd , Uiα = αUi1 + (1 − α)Ui2 , i ∈ [N ],
+reg
+reg
+reg
+α
+1
+2
+) + (1 − α)DH
+(U12 , . . . UN
+).
+DH
+(U1α , . . . , UN
+) ≥ αDH
+(U11 , . . . UN
+reg
+Secondly, to show that DH
+is bounded from above, we may simply notice that
+reg
+DH
+(U1 , . . . , UN ) =
+
+N
+X
+
+f
+=
+Tr [Ui γi ] + λef
+1
+
+i=1
+
+i=1
+λef f
+
+since (U1 + 1N 11 , . . . , UN +
+f
+L
+λef
+1
+H− N
+i=1 (Ui + N 1i ) ≽ 0.
+
+f
+λef
+1
+N
+
+N
+X
+
+"
+
+#
+f
+λef
+1
+Tr (Ui +
+1i )γi ≤ PQ
+H,
+N
+
+1N ) is a feasible point for the dual problem (3), that is
+
+To prove the third statement, for simplicity, consider the case when the last N − 1 variables are
+fixed. Then, for fixed U2 , . . . , UN ∈ Hd consider a function
+d : Hd → R,
+
+reg
+d(U ) = DH
+(U, U2 , . . . , UN ).
+
+Then,
+d(U ) = Tr [U γ1 ] + min ⟨ψ, (H −
+ψ∈CD
+∥ψ∥=1
+
+N
+M
+
+Ui − U ⊗
+
+i=2
+
+= Tr [U γ1 ] + min ⟨ψ, (H̃ − U ⊗
+ψ∈CD
+∥ψ∥=1
+
+1i )ψ⟩ +
+
+i=2
+N
+O
+i=2
+
+3
+
+N
+O
+
+1i )ψ⟩ + C,
+
+N
+X
+i=2
+
+Tr [Ui γi ]
+
+Q UANTUM O PTIMAL T RANSPORT: R EGULARIZATION AND A LGORITHMS
+
+where H̃ = H −
+
+LN
+
+i=2 Ui . Then, for any U
+
+′ ∈H
+d
+
+N
+N
+O
+O
+ ′
+
+′
+d(U ) − d(U ) = Tr (U − U )γ1 + min ⟨ψ, (H̃ − U ⊗
+1i )ψ⟩ − min ⟨ψ, (H̃ − U ⊗
+1i )ψ⟩
+′
+
+ψ∈CD
+∥ψ∥=1
+
+i=2
+
+ψ∈CD
+∥ψ∥=1
+
+i=2
+
+N
+N
+O
+O
+ ′
+
+′
+= Tr (U − U )γ1 + min ⟨ψ, (H̃ − U ⊗
+1i )ψ⟩ − ⟨ψ1 , (H̃ − U ⊗
+1i )ψ1 ⟩
+ψ∈CD
+∥ψ∥=1
+
+i=2
+
+i=2
+
+N
+N
+O
+O
+ ′
+
+′
+≤ Tr (U − U )γ1 + ⟨ψ1 , (H̃ − U ⊗
+1i )ψ1 ⟩ − ⟨ψ1 , (H̃ − U ⊗
+1i )ψ1 ⟩
+i=2
+
+i=2
+
+
+
+
+
+= Tr (U ′ − U )γ1 + ⟨ψ1 , H̃ψ1 ⟩ − Tr Tr1 [|ψ1 ⟩ ⟨ψ1 |] (U ′ − U ) − ⟨ψ1 , H̃ψ1 ⟩
+
+
+= Tr (U ′ − U )(γ1 − Tr1 [|ψ1 ⟩ ⟨ψ1 |]) .
+The resulting subgradient is traceless
+
+
+Tr γ1 − Tr1 [|ψ1 ⟩ ⟨ψ1 |] = Tr [γ1 ] − Tr [|ψ1 ⟩ ⟨ψ1 |] = 0.
+Now, consider the subgradient (G1 , . . . , GN ), where Gi = γi − Tri [|ψ1 ⟩ ⟨ψ1 |] , i ∈ [N ]. Upper
+bound for the l2 -norm of each component Gi follows from the triangle inequality and from the fact
+that l1 -norm of matrix is bigger than l2 -norm
+γi − Tri [|ψ1 ⟩ ⟨ψ1 |] 2 ≤ ∥γi ∥2 + Tri [|ψ1 ⟩ ⟨ψ1 |] 2 ≤ ∥γi ∥1 + Tri [|ψ1 ⟩ ⟨ψ1 |] 1 = 2.
+The lower bound on (G1 , . . . , GN ) follows from the Wielandt-Hoffman theorem
+N
+X
+
+2
+
+γi − Tri [|ψ1 ⟩ ⟨ψ1 |] 2 ≥
+
+i=1
+
+N
+X
+
+∥Λi − Λ∥22 ,
+
+i=1
+
+where Λi = (λi1 , . . . , λid ), and λi1 ≤ · · · ≤ λid are the eigenvalues of γi , for all i ∈ [N ]. Λ =
+(λ1 , . . . , λd ) denotes the spectrum of Tri [|ψ1 ⟩ ⟨ψ1 |] , i ∈ [N ]; since the partial traces are obtained
+from a pure state, their spectrum λ1 ≤ · · · ≤ λd is the same.
+Finally, by taking infimum of RHS w.r.t. all possible values of spectrum Λ,
+N
+X
+
+inf
+
+Λ∈Rd+
+
+∥Λi − Λ∥22 .
+
+i=1
+
+Pd
+
+j=1 Λj =1
+
+We observe that minimum is achieved at Λ = 1/N
+have the bounds
+N
+X
+
+2
+
+Λi − Λ 2 ≤
+
+PN
+
+N
+X
+
+i=1
+
+i=1
+
+4
+
+i=1 Λi , which is an attainable value. Thus, we
+
+∥Gi ∥22 ≤ 4N.
+
+Q UANTUM O PTIMAL T RANSPORT: R EGULARIZATION AND A LGORITHMS
+
+S3
+
+Subgradient Ascent Algorithm
+
+The algorithm we used to find the optimal point of (5) is given in the Algorithm 1.
+Algorithm 1: Subgradient Ascent for the eigenvalue regularization in (5)
+Data:
+0 ∈ H (initial traceless Hermitian duals);
+U10 , . . . , UN
+d
+H ∈ HD (cost Hamiltonian);
+γ1 , . . . , γN ∈ Dd (marginals)
+Result:
+∗ ∈H
+Maximizing sequence for (3) U1∗ , . . . , UN
+d
+f ←0
+
+// Initialize estimated optimal value
+
+for n ← 0, 1, 2, . . . do
+LN
+n
+Heff
+n ←H−
+i=1 Ui
+n
+ψ1 ← arg minψ ⟨ψ, Heff
+n ψ⟩
+PN
+n
+n
+fn ← i=1 Tr [Ui γi ] + ⟨ψ1n , Heff
+n ψ1 ⟩
+if fn > f then
+f ← fn
+end
+f
+τn ←
+n+1
+ηn ←
+
+// Correction term for f
+
+f + τn − fn
+4N
+
+// Approx. Polyak step size
+
+for i ← 1 to N do
+
+Uin+1 ← Uin + ηn γi − Tri [|ψ1n ⟩ ⟨ψ1n |]
+end
+end
+
+S4
+
+Properties of the Entropy Regularized Dual Functional
+
+Proposition 3 Let d, N ∈ N be the natural numbers, D = dN , γ1 , . . . , γN ∈ Dd be density
+reg
+matrices, H ∈ HD be a Hermitian operator, and DH,ε
+be the dual QOT functional
+reg
+DH,ε
+:
+
+N
+ą
+
+Hd → R,
+
+reg
+DH,ε
+(U1 , . . . , UN ) =
+
+i=1
+
+N
+X
+i=1
+
+
+
+
+
+Heff
+Tr [Ui γi ] − ε log Tr exp −
+ε
+
+(S12)
+
+for given regularization parameter ε > 0. Then
+reg
+1. The dual functional DH,ε
+defined as in (S12) is differentiable and strictly concave function;
+h
+
+i
+H
+Tri exp − εeff
+reg
+reg
+2. The gradient of DH,ε with respect to Ui is ∇Ui DH,ε = γi − h  Heff i .
+Tr exp −
+ε
+
+5
+
+Q UANTUM O PTIMAL T RANSPORT: R EGULARIZATION AND A LGORITHMS
+
+reg
+Proof The fact that it is continuous follows from the fact that DH
+is a sum of the linear function, which is continuous, and the logarithm of strictly positive continuous function,
+so
+h
+ the whole
+i
+expression is continuous. To prove strict concavity, it suffices to show that log Tr exp − Hεeff
+is
+
+strictly convex. Let α ∈ (0, 1), Ui1 , Ui2 ∈ Hd , i ∈ [N ]. Then we have
+!#
+"
+L
+1
+2
+H− N
+i=1 (αUi + (1 − α)Ui )
+Tr exp −
+ε
+"
+!#
+LN
+L
+2)
+1 ) + (1 − α)(H −
+U
+U
+α(H − N
+i=1 i
+i=1 i
+= Tr exp −
+ε
+!#
+"
+L
+LN
+1
+2
+U
+U
+H− N
+H
+−
+i=1 i
+i=1 i
+,
+= Tr exp −α
+− (1 − α)
+ε
+ε
+so we will show that f (A) = log Tr [exp(A)] is strictly convex. For two hermitian matrices A, B ∈
+Hd , let v1 , . . . , vd be the eigenvectors of αA + (1 − α)B, then
+log Tr [exp(αA + (1 − α)B)]
+= log
+
+= log
+
+d
+X
+i=1
+d
+X
+
+e⟨vi ,(αA+(1−α)B)vi ⟩
+eα⟨vi ,Avi ⟩+(1−α)⟨vi ,Bvi ⟩
+
+i=1
+d
+X
+
+≤ α log
+
+< α log
+
+i=1
+d
+X
+i=1
+
+e⟨vi ,Avi ⟩ + (1 − α) log
+
+d
+X
+
+e⟨vi ,Bvi ⟩
+
+i=1
+d
+X
+
+⟨vi , eA vi ⟩ + (1 − α) log
+
+⟨vi , eB vi ⟩
+
+(log-sum-exp convexity)
+
+(strict Jensen’s inequality)
+
+i=1
+ B
+
+ 
+= α log Tr eA + (1 − α) log Tr e
+
+.
+
+reg
+So finally we have proved the strong concavity of DH,ε
+.
+
+The form of the gradient we could prove via the Fréchet derivative, since it will give clear and
+intuitive proof. Let us prove the result for U1 since others can be shown equivalently. Again, the
+linear term does not cause any complication, so we merely need to work on the log-trace-exp. for
+the function f (A) = log Tr [exp(A)] the Fréchet derivative Df (A) in the direction A′ is
+Df (A) =
+
+Tr [A′ exp(A)]
+.
+Tr [exp(A)]
+
+N
+Thus, is we perturb U1 by U1′ , we basically perturb the log-trace-exp term by U1′ ⊗ N
+i=2 1i , so the
+Fréchet derivative is:
+
+h
+
+i
+h
+
+i 
+L
+L
+N
+H− N
+H− N
+1
+i=1 Ui
+i=1 Ui
+exp
+−
+Tr U1′ ⊗ N
+1
+exp
+−
+Tr
+i=2 i
+ε
+ε
+
+
+= Tr U1′
+h
+
+i
+h
+
+i  .
+LN
+LN
+H− i=1 Ui
+H− i=1 Ui
+ε Tr exp −
+ε Tr exp −
+ε
+ε
+6
+
+Q UANTUM O PTIMAL T RANSPORT: R EGULARIZATION AND A LGORITHMS
+
+reg
+Thus, the Fréchet derivative of DH,ε
+w.r.t. U1 in the direction U1′ is
+
+
+
+i 
+L
+H− N
+i=1 Ui
+
+
+ε
+ Tr exp −
+
+reg
+= Tr U1′ γ1 − Tr U1′
+DU1 DH,ε
+h
+
+i  ,
+L
+H− N
+U
+i=1 i
+Tr exp −
+ε
+1
+
+h
+
+
+
+reg
+which proves the form of the gradient, considering the continuity of DH,ε
+.
+
+S5
+
+Von Neumman-regularized Optimal Transport
+
+The primal formulation of von Neumman-regularized Optimal Transport is given by
+PQ
+H,ε (γ1 , . . . , γN ) = min{Tr [HΓ] + ε Tr [Γ (log Γ − 1)] : Γ 7→ (γ1 , . . . , γN )}.
+Γ
+
+(S13)
+
+The von Neumann entropy-regularization term enforces the optimal quantum coupling be a Gibbs
+ε
+state [17]: if (U i )i∈[N ] is a optimal dual entropy-potentials in (6) then
+Γε = exp
+
+LN
+
+ε
+
+i=1 U i − H
+ε
+
+!
+,
+
+(S14)
+
+is a feasible solution Γε 7→ (γ1 , . . . , γN ) and solves the primal formulation of the regularized QOT
+problem in eq. (6) [17].
+The next theorem state and fully characterizes the primal-dual solutions for the von Neumann
+entropy-regularized Quantum optimal Transport problem in (6) and (S13), see [17].
+Theorem 4 (Theorem 2.1 in [17]) Fix d, N ∈ N, D = dN and ε > 0. Let H ∈ HD be a Hermitian
+cost operator and γ1 , . . . , γN ∈ Dd be density matrices in Cd . Then
+Q
+1. (Strong duality) PQ
+H,ε (γ1 , . . . , γN ) = DH,ε (γ1 , . . . , γN ).
+
+2. (Existence of maximizer) The dual problem DQ
+H,ε (γ1 , . . . , γN ) in (6) admits a maximizer
+ε
+ε
+U 1 , . . . , U N ∈ Hd that is unique up to a trivial shift.
+3. (Existence of minimizer) The primal problem PQ
+H,ε (γ1 , . . . , γN ) admits a unique minimizer
+Γε ∈ DD which is given by (S14).
+
+S6
+
+Wigner Function and Gaussian States in Continuous Variables
+
+Let q, p ∈ Rm be the position and momentum vectors, and define the phase space vector
+r = (q1 , . . . , qm , p1 , . . . , pm )T ∈ R2m .
+
+7
+
+Q UANTUM O PTIMAL T RANSPORT: R EGULARIZATION AND A LGORITHMS
+
+Let |q⟩ denote an eigenvector of the position operator Q with eigenvalue q ∈ R, and define the tensor
+product |q⟩ = |q1 ⟩ ⊗ · · · ⊗ |qm ⟩. Let ρ be a density operator on the Hilbert space H = L2 (Rm ).
+The Wigner transform of ρ is the function W (q, p) on phase space R2m defined by
+
+Z 
+1
+1
+1
+W (q, p) =
+q
++
+z
+ρ
+q
+−
+z
+eip·z dz.
+(2π)m Rm
+2
+2
+This function represents the quantum state in phase space, though it is generally not pointwise
+positive. A particularly important class of states are Gaussian states, for which the Wigner function
+is a multivariate normal distribution.
+Define the canonical operators R2k−1 = Qk , R2k = Pk for k ∈ [m]. Then
+• The mean vector is r ∈ R2m , with entries ri = Tr [Ri ρ], for all i ∈ [2m].
+• The covariance matrix Σ ∈ R2m×2m is given by
+Σij =
+
+1
+Tr [{Ri , Rj }ρ] − ri rj ,
+2
+
+for all i, j ∈ [2m].
+
+where {Ri , Rj } = Ri Rj + Rj Ri is the anticommutator.
+Then the Wigner function of a Gaussian state is
+W (r) =
+
+(2π)m
+
+1
+√
+
+
+
+1
+T −1
+exp − (r − r) Σ (r − r) .
+2
+det Σ
+
+Numerical Computation from the Fock Basis: if ρ is represented in the Fock basis {|n⟩}n≥0 , the
+√ ∈ C can be expressed as
+Wigner function at phase space point α = q+ip
+2
+W (α) =
+
+h
+i
+2
+Tr D(α)ρD† (α)P ,
+π
+
+√
+where D(α) = exp(αa† −α∗ a), a = Q+iP
+is the displacement operator, and P =
+2
+is the parity operator. In the Fock basis, this becomes
+
+W (α) =
+
+n
+n (−1) |n⟩ ⟨n|
+
+P
+
+2X
+ρmn ⟨n| D(2α) |m⟩ (−1)m ,
+π m,n
+
+where matrix elements of D(2α) can be computed analytically or numerically, for instance, using
+QuTiP [19].
+
+S7
+
+Thermal states
+
+Example 1 (Thermal state) One important example of quantum channel is a so-called thermal
+state. A thermal state γ at inverse temperature β > 0 state is defined as
+∞ −β(n+ 1 )
+∞
+h
+i X
+X
+1
+2
+e
+e−β/2
+e−βHho
+γβ =
+=
+|n⟩⟨n|, Zβ = Tr e−βHho =
+e−β(n+ 2 ) =
+, (S15)
+Zβ
+Zβ
+1 − e−β
+n=0
+
+n=0
+
+8
+
+Q UANTUM O PTIMAL T RANSPORT: R EGULARIZATION AND A LGORITHMS
+
+Figure S3: Wigner transforms of the (partial traces of) the quantum optimal coupling Γ∗ ∈
+CD solving the QOT problem 1 in example 1 (see also Proposition 5). The space CD , with D =
+2500, corresponds to a truncation of the Fock basis to the first d = 50 elements. The Wigner
+transforms W1 (x1 , p1 ) and W2 (x2 , p2 ) (see Appendix S6) depict the marginals of the partial traces
+of Γ∗ . In this case, Γ∗ is a thermal state at zero temperature.
+where Hho = 12 (Q2 + P 2 ) is the Hamiltonian of the quantum harmonic oscillator, with Q and P
+denoting the position and momentum operators, respectively. The eigenstates of Hho are the Fock
+states {|n⟩}n∈N , with corresponding energies En = n + 21 (ℏ = 1). In the zero-temperature limit
+β → ∞, the thermal state approaches the vacuum state |0⟩): γ∞ = limβ→∞ γβ = |0⟩⟨0|.
+Thermal states belong to a special class of quantum states known as Gaussian states, whose Wigner
+transforms are Gaussian distributions in phase space, see [4] for details. Gaussian states are completely characterized by their first moments (means) and second moments (covariance matrices).
+They are relevant because closed-form solutions to (1) were derived in [14] for thermal states with
+covariance matrices proportional to the identity, where the cost Hamiltonian is given by (8). These
+analytical solutions are used to benchmark our algorithms in for the cost operator (??).
+Proposition 5 (Closed form solutions, [14]) Let H be the quadratic Hamiltonian on L2 (Rm ) ⊗
+L2 (Rm ) defined in (8). If γβ1 and γβ2 are thermal states with covariance matrices, respectively,
+given by ν1 1 and ν2 1 such that 1/2 ≤ ν1 ≤ ν2 , then the QOT problem (1) is given by [14]
+!
+r
+r
+√
+1
+1
+PQ
+m
+ν2 + − ν1 −
+.
+H (γβ1 , γβ2 ) =
+2
+2
+
+S8
+
+Multi-marginal Quantum Optimal Transport with Random Hamiltonian
+
+In this final set of experiments, we also consider N Hilbert spaces C2 , so that the Hilbert space of
+the composite system is defined on (C2 )⊗N . The Hamiltonian is drawn from a normal distribution,
+i.e. it is constructed by sampling 22N independent standard normal variables, reshaping them into a
+2N × 2N matrix, and symmetrizing to ensure Hermiticity.
+As in the previous section, we fix N = 12 and define the marginals using the low-energy eigenvectors of the random Hamiltonian. Let ψ1 , . . . , ψl , with l ≤ 2N , denote the eigenvectors corresponding to the first l eigenvalues in ascending order. The test cases are as follows and reported in
+Table S2 below and on the convergence plots in the Figure S4.
+9
+
+Q UANTUM O PTIMAL T RANSPORT: R EGULARIZATION AND A LGORITHMS
+
+• RG: The marginals γk = Trk [|ψ1 ⟩ ⟨ψ1 |], for all k ∈ [N ].
+• RE: The marginals γk = Trk [|ψ
+k ∈ [N ].
+ 2 ⟩ ⟨ψ2 |], for all
+k 1
+1
+• RM: The marginals γk = Tr 2 |ψ1 ⟩ ⟨ψ1 | + 2 |ψ2 ⟩ ⟨ψ2 | , for all k ∈ [N ].
+Hho
+
+• RT: γk = e− k /Zk is a thermal state at temperature k ∈ [N ], see equation (S15).
+
+Figure S4: Convergence of the optimality gap |dn − d∗ | versus number of iteration for the subgradient method (green line) and L-BFGS for the tests in Section S8. The variable dn denotes the
+objective value at iteration n for each algorithm, d∗ is the ground-truth optimal value computed via
+using MOSEK solver. The regularization parameter ε = 10−12 .
+Test Rank Tol. M Time Iters Ach.
+
+RG
+
+RE
+
+Err.
+
+1
+
+1e-3
+1e-4
+1e-5
+1e-6
+1e-3
+1e-4
+1e-5
+1e-6
+
+S
+S
+S
+S
+L
+L
+L
+L
+
+0.237
+0.333
+0.437
+0.560
+1.286
+1.337
+1.293
+1.321
+
+283
+414
+564
+734
+2
+2
+2
+2
+
+Yes
+Yes
+Yes
+Yes
+Yes
+Yes
+Yes
+Yes
+
+1.8e-04
+2.4e-06
+3.2e-08
+2.0e-09
+1.6e-09
+1.6e-09
+1.6e-09
+1.6e-09
+
+1
+
+1e-3
+1e-4
+1e-5
+1e-6
+1e-3
+1e-4
+1e-5
+1e-6
+
+S
+S
+S
+S
+L
+L
+L
+L
+
+0.270 337
+0.522 692
+0.773 1051
+1.019 1409
+1.601
+6
+1.848
+8
+1.965
+9
+2.267
+11
+
+Yes
+Yes
+Yes
+Yes
+Yes
+Yes
+Yes
+Yes
+
+1.0e-03
+9.8e-06
+9.8e-08
+2.0e-09
+2.2e-04
+5.4e-06
+2.9e-07
+5.3e-10
+
+Test Rank Tol. M
+
+RT
+
+RM
+
+Time
+
+Iters Ach.
+
+Err.
+
+1
+
+1e-3 S 153.545 218685 Yes 8.6e-01
+1e-4 S 350.928 500000 No 6.6e-01
+1e-5 S 349.184 500000 No 6.6e-01
+1e-6 S 349.416 500000 No 6.6e-01
+1e-3 L
+9.076
+60 Yes 3.0e-04
+1e-4 L 10.444
+69 Yes 1.0e-03
+1e-5 L 11.005
+72 Yes 1.0e-03
+1e-6 L 27.138
+125 Yes 1.2e-03
+
+1
+
+1e-3 S
+1e-4 S
+1e-5 S
+1e-6 S
+1e-3 L
+1e-4 L
+1e-5 L
+1e-6 L
+
+0.250
+0.400
+0.575
+0.749
+1.263
+1.584
+1.713
+1.973
+
+299 Yes 4.2e-04
+510 Yes 6.2e-06
+759 Yes 6.2e-08
+1009 Yes 9.8e-10
+4 Yes 3.9e-04
+6 Yes 5.2e-06
+7 Yes 1.2e-06
+9 Yes 6.8e-11
+
+Table S2: Comparison of L-BFGS and subgradient method for randomly generated Hamiltonian.
+The columns are as follows: Test – identifier of the test instance; Rank – rank of the QOT coupling
+in 1 returned by the ground-truth solution (MOSEK [24]); Tol. – (sub-)gradient norm threshold;
+M – method used (S for subgradient, L for L-BFGS); Time – wall-clock runtime in seconds; Iters
+– number of iterations; Ach. – whether the method met the target tolerance; Err. – final absolute
+difference between the objective value and the ground truth.
+
+10
+
+

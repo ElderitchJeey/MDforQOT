@@ -1,0 +1,16 @@
+\begin{table}
+\caption{Main qubit mixed benchmark at $\varepsilon=10^{-3}$. Values are medians over available Ising and random instances with $N=4,6,7,8$.}
+\label{tab:main-qubit-mixed}
+\begin{tabular}{lrllllll}
+\toprule
+Method & Inst. & $E_{\rm tr}\le 10^{-4}$ & $E_{\rm tr}$ & $F_{\rm marg}$ & Gibbs to $10^{-4}$ & Time (s) & Obj. gap \\
+\midrule
+L-BFGS entropy dual & 8 & 62\% & 3.84e-05 & 1.67e-09 & 50563 & 183.1 & 0.00e+00 \\
+KL descent (eta=eps/N) & 8 & 88\% & 8.92e-05 & 1.00e-08 & 36241 & 576.2 & 9.13e-06 \\
+KL descent (eta=eps) & 8 & 75\% & 9.16e-05 & 9.99e-09 & 7364 & 91.4 & 7.50e-06 \\
+MD-Sinkhorn (M=1) & 8 & 100\% & 9.99e-05 & 3.50e-08 & 23408 & 514.3 & 9.28e-06 \\
+MD-Sinkhorn (M=2) & 8 & 100\% & 9.99e-05 & 3.23e-08 & 23647 & 512.2 & 9.85e-06 \\
+MD-Sinkhorn (M=5) & 8 & 100\% & 9.99e-05 & 3.60e-08 & 26163 & 520.6 & 1.00e-05 \\
+\bottomrule
+\end{tabular}
+\end{table}

@@ -139,6 +139,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--M_list", default=",".join(str(x) for x in DEFAULT_M_LIST))
     parser.add_argument("--T_kl", type=int, default=300)
     parser.add_argument("--T_md", type=int, default=300)
+    parser.add_argument("--max_gibbs_calls", type=int, default=None)
     parser.add_argument("--eta_kl", type=float, default=None)
     parser.add_argument("--eta_kl_rule", choices=["eps_over_N", "eps"], default="eps_over_N")
     parser.add_argument("--eta_kl_rules", default="eps_over_N,eps")

@@ -1,0 +1,7 @@
+method,rows,achieved,median_first_gibbs,median_first_iter,median_final_gibbs,median_final_e
+KL descent (eta=eps),8,6,5108.0,5107.0,7947.5,9.159948024483635e-05
+KL descent (eta=eps/N),8,7,31518.0,31517.0,37348.0,8.91819476499562e-05
+L-BFGS entropy dual,8,5,463.0,0.0,50563.0,3.839206480726637e-05
+MD-Sinkhorn (M=1),8,8,23407.5,4807.5,23407.5,9.986368511231644e-05
+MD-Sinkhorn (M=2),8,8,23647.0,2594.5,23647.0,9.991346801513471e-05
+MD-Sinkhorn (M=5),8,8,26163.0,1415.0,26163.0,9.992305654438205e-05

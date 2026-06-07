@@ -184,6 +184,7 @@ def md_type_sinkhorn_potential(
     tol_inner: Optional[float] = None,
     project_pi: bool = True,
     U0: Optional[List[np.ndarray]] = None,
+    max_gibbs_calls: Optional[int] = None,
 ) -> MDsinkhornResult:
     if abs(eta_inner - 1.0) > 1e-12:
         raise ValueError("This file enforces eta_inner=1.")
@@ -242,13 +243,19 @@ def md_type_sinkhorn_potential(
         return converged
 
     converged = _record(pi, U_list)
+    budget_exhausted = max_gibbs_calls is not None and PI_COUNTER.n_calls >= int(max_gibbs_calls)
 
     for _k in range(T_outer):
-        if converged:
+        if converged or budget_exhausted:
             break
 
         for i in range(N):
+            if budget_exhausted:
+                break
             for _ in range(M_inner):
+                if max_gibbs_calls is not None and PI_COUNTER.n_calls >= int(max_gibbs_calls):
+                    budget_exhausted = True
+                    break
                 rho_i = partial_trace_except_i(pi, dims, i)
                 err_i = float(trace_norm(rho_i - gammas[i]))
                 if err_i <= float(tol_inner):
@@ -258,6 +265,7 @@ def md_type_sinkhorn_potential(
                 pi = gibbs_state_from_potentials(U_list, H, eps, dims, jitter=jitter, project=project_pi)
 
         converged = _record(pi, U_list)
+        budget_exhausted = max_gibbs_calls is not None and PI_COUNTER.n_calls >= int(max_gibbs_calls)
 
     return MDsinkhornResult(
         F_list=F_list,
@@ -316,6 +324,7 @@ def potential_marginal_kl_descent(
     store_hist: bool = False,
     project_pi: bool = True,
     U0: Optional[List[np.ndarray]] = None,
+    max_gibbs_calls: Optional[int] = None,
 ) -> PotentialKLDescentResult:
     """
     U_i <- U_i - eta (log rho_i - log gamma_i),  pi <- Gibbs(U).
@@ -359,6 +368,8 @@ def potential_marginal_kl_descent(
     converged = False
 
     for n in range(T):
+        if max_gibbs_calls is not None and PI_COUNTER.n_calls >= int(max_gibbs_calls):
+            break
         rho_list = [partial_trace_except_i(pi, dims, i) for i in range(N)]
         for i in range(N):
             log_rho = herm_log(rho_list[i], jitter=jitter_log)

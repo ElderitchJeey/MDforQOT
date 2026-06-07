@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 
@@ -18,6 +18,12 @@ from .run_wasserstein_trend import make_wasserstein_instance
 
 def parse_csv_ints(spec: str) -> List[int]:
     return [int(x.strip()) for x in spec.split(",") if x.strip()]
+
+
+def first_hit(values: List[float], tol: float) -> int:
+    arr = np.asarray(values, dtype=float)
+    hit = np.where(arr <= float(tol))[0]
+    return int(hit[0]) if hit.size else -1
 
 
 def summarize_result(
@@ -36,7 +42,9 @@ def summarize_result(
     warmup_time = float((getattr(warmup, "times", []) or [0.0])[-1]) if warmup is not None else 0.0
     run_gibbs = int(getattr(res, "gibbs_calls", 0) or 0)
     run_time = float((getattr(res, "times", []) or [0.0])[-1])
-    return {
+    e_list = list(getattr(res, "e_tr_list", []) or [])
+    gibbs_list = list(getattr(res, "gibbs_calls_list", []) or [])
+    row = {
         "method": method,
         "mode": mode,
         "converged": bool(getattr(res, "converged", False)),
@@ -53,8 +61,16 @@ def summarize_result(
         "final_cost": float(np.real(np.trace(H @ pi))),
         "stage_gibbs_calls": ";".join(str(x) for x in (getattr(warmup, "stage_gibbs_calls_list", None) or [])),
         "stage_iters": ";".join(str(x) for x in (getattr(warmup, "stage_iters_list", None) or [])),
-        "eps_schedule": ";".join(str(x) for x in (getattr(warmup, "eps_schedule", None) or [])),
+        "eps_schedule": ";".join(str(x) for x in (getattr(warmup, "stage_eps_list", None) or getattr(warmup, "eps_schedule", None) or [])),
     }
+    for tol, label in [(1e-3, "1em03"), (1e-4, "1em04")]:
+        idx = first_hit(e_list, tol) if e_list else -1
+        hit_gibbs = int(gibbs_list[idx]) if idx >= 0 and len(gibbs_list) == len(e_list) else -1
+        row[f"hit_tr_le_{label}"] = bool(idx >= 0) if e_list else ""
+        row[f"hit_tr_iter_le_{label}"] = idx if e_list else ""
+        row[f"hit_tr_gibbs_le_{label}"] = hit_gibbs
+        row[f"total_hit_tr_gibbs_le_{label}"] = warmup_gibbs + hit_gibbs if hit_gibbs >= 0 else -1
+    return row
 
 
 def make_instance(args: argparse.Namespace):
@@ -90,8 +106,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--eps0", type=float, default=1.0)
     parser.add_argument("--q", type=float, default=10.0)
     parser.add_argument("--max_inner", type=int, default=2000)
+    parser.add_argument("--max_gibbs_calls", type=int, default=None)
     parser.add_argument("--M_list", default="1,2,5")
-    parser.add_argument("--inner_tol", type=float, default=1e-3)
+    parser.add_argument("--inner_tol", type=float, default=1e-2)
     parser.add_argument("--final_tol", type=float, default=1e-8)
     parser.add_argument("--jitter", type=float, default=1e-10)
     parser.add_argument("--tol_tr", type=float, default=1e-8)
@@ -105,6 +122,18 @@ def main() -> None:
     H, gammas, dims, label, metadata = make_instance(args)
     M_list = parse_csv_ints(args.M_list)
     eps_schedule = build_eps_schedule(args.eps0, args.eps_final, args.q)
+    warm_eps_schedule = eps_schedule[:-1]
+
+    def warm_budget() -> Optional[int]:
+        if args.max_gibbs_calls is None:
+            return None
+        return max(1, int(args.max_gibbs_calls) - 1)
+
+    def remaining_budget(warmup: Any) -> Optional[int]:
+        if args.max_gibbs_calls is None:
+            return None
+        used = int(getattr(warmup, "gibbs_calls", 0) or 0) if warmup is not None else 0
+        return max(1, int(args.max_gibbs_calls) - used)
 
     rows: List[Dict[str, Any]] = []
     kl_specs = [("KL descent (eta=eps/N)", "eps_over_N"), ("KL descent (eta=eps)", "eps")]
@@ -121,22 +150,26 @@ def main() -> None:
             tol_tr=args.tol_tr,
             tol_F=args.tol_F,
             project_pi=True,
+            max_gibbs_calls=args.max_gibbs_calls,
         )
         rows.append(summarize_result(method=label_method, mode="cold", res=cold, H=H, gammas=gammas, dims=dims))
-        warmup = annealed_eqot_solver(
-            H=H,
-            target_marginals=gammas,
-            dims=dims,
-            eps_schedule=eps_schedule,
-            method="kl",
-            kl_eta_rule=eta_rule,
-            max_inner=args.max_inner,
-            inner_tol=args.inner_tol,
-            final_tol=args.final_tol,
-            jitter=args.jitter,
-            tol_F=args.tol_F,
-            project_pi=True,
-        )
+        warmup = None
+        if warm_eps_schedule:
+            warmup = annealed_eqot_solver(
+                H=H,
+                target_marginals=gammas,
+                dims=dims,
+                eps_schedule=warm_eps_schedule,
+                method="kl",
+                kl_eta_rule=eta_rule,
+                max_inner=args.max_inner,
+                inner_tol=args.inner_tol,
+                final_tol=args.inner_tol,
+                jitter=args.jitter,
+                tol_F=None,
+                project_pi=True,
+                max_gibbs_calls=warm_budget(),
+            )
         warm = potential_marginal_kl_descent(
             H=H,
             gammas=gammas,
@@ -149,7 +182,8 @@ def main() -> None:
             tol_tr=args.tol_tr,
             tol_F=args.tol_F,
             project_pi=True,
-            U0=warmup.U_list,
+            U0=warmup.U_list if warmup is not None else None,
+            max_gibbs_calls=remaining_budget(warmup),
         )
         rows.append(summarize_result(method=label_method, mode="warm_matched", res=warm, warmup=warmup, H=H, gammas=gammas, dims=dims))
 
@@ -166,22 +200,26 @@ def main() -> None:
             M_inner=M,
             tol_inner=1e-4,
             project_pi=True,
+            max_gibbs_calls=args.max_gibbs_calls,
         )
         rows.append(summarize_result(method=f"MD-Sinkhorn (M={M})", mode="cold", res=cold, H=H, gammas=gammas, dims=dims))
-        warmup = annealed_eqot_solver(
-            H=H,
-            target_marginals=gammas,
-            dims=dims,
-            eps_schedule=eps_schedule,
-            method="md_sinkhorn",
-            M_inner=M,
-            max_inner=args.max_inner,
-            inner_tol=args.inner_tol,
-            final_tol=args.final_tol,
-            jitter=args.jitter,
-            tol_F=args.tol_F,
-            project_pi=True,
-        )
+        warmup = None
+        if warm_eps_schedule:
+            warmup = annealed_eqot_solver(
+                H=H,
+                target_marginals=gammas,
+                dims=dims,
+                eps_schedule=warm_eps_schedule,
+                method="md_sinkhorn",
+                M_inner=M,
+                max_inner=args.max_inner,
+                inner_tol=args.inner_tol,
+                final_tol=args.inner_tol,
+                jitter=args.jitter,
+                tol_F=None,
+                project_pi=True,
+                max_gibbs_calls=warm_budget(),
+            )
         warm = md_type_sinkhorn_potential(
             H=H,
             gammas=gammas,
@@ -194,7 +232,8 @@ def main() -> None:
             M_inner=M,
             tol_inner=1e-4,
             project_pi=True,
-            U0=warmup.U_list,
+            U0=warmup.U_list if warmup is not None else None,
+            max_gibbs_calls=remaining_budget(warmup),
         )
         rows.append(summarize_result(method=f"MD-Sinkhorn (M={M})", mode="warm_matched", res=warm, warmup=warmup, H=H, gammas=gammas, dims=dims))
 
@@ -205,6 +244,7 @@ def main() -> None:
         row["eps0"] = float(args.eps0)
         row["q"] = float(args.q)
         row["max_inner"] = int(args.max_inner)
+        row["max_gibbs_calls"] = "" if args.max_gibbs_calls is None else int(args.max_gibbs_calls)
         row["warm_method"] = "matched"
         row["warm_variant"] = row["method"]
 

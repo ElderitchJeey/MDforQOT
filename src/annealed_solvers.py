@@ -177,6 +177,7 @@ def annealed_eqot_solver(
     kl_eta_rule: str = "eps_over_N",
     M_inner: int = 1,
     max_inner: int = 5000,
+    max_gibbs_calls: Optional[int] = None,
     inner_tol: float = 1e-3,
     final_tol: float = 1e-8,
     tol_mode: str = "fixed",
@@ -238,6 +239,11 @@ def annealed_eqot_solver(
     final_res: Any = None
 
     for stage_index, eps in enumerate(schedule):
+        stage_budget = None
+        if max_gibbs_calls is not None:
+            stage_budget = int(max_gibbs_calls) - int(total_gibbs)
+            if stage_budget <= 0:
+                break
         is_final = stage_index == len(schedule) - 1
         stage_tol = _stage_tol(
             eps=eps,
@@ -262,6 +268,7 @@ def annealed_eqot_solver(
                 tol_F=tol_F if is_final else None,
                 project_pi=project_pi,
                 U0=U_list,
+                max_gibbs_calls=stage_budget,
             )
         else:
             res = md_type_sinkhorn_potential(
@@ -277,6 +284,7 @@ def annealed_eqot_solver(
                 tol_inner=md_tol_inner,
                 project_pi=project_pi,
                 U0=U_list,
+                max_gibbs_calls=stage_budget,
             )
 
         U_list = [hermitianize(Ui.copy()) for Ui in res.U_list]
@@ -346,6 +354,7 @@ def annealed_eqot_solver(
             "kl_eta_rule": kl_eta_rule if method == "kl" else "",
             "M_inner": int(M_inner) if method == "md_sinkhorn" else "",
             "max_inner": int(max_inner),
+            "max_gibbs_calls": "" if max_gibbs_calls is None else int(max_gibbs_calls),
             "inner_tol": float(inner_tol),
             "final_tol": float(final_tol),
             "tol_mode": tol_mode,
