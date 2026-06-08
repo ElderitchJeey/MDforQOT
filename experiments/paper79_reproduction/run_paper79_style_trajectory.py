@@ -46,6 +46,7 @@ def rows_from_result(
     dims: List[int],
     gibbs_offset: int = 0,
     warmup_gibbs_calls: int = 0,
+    record_every: int = 1,
 ) -> List[Dict[str, Any]]:
     F = list(getattr(res, "F_list", []) or [])
     e = list(getattr(res, "e_tr_list", []) or [])
@@ -57,6 +58,8 @@ def rows_from_result(
     rows: List[Dict[str, Any]] = []
     for k in range(n):
         local_gibbs = int(gibbs[k]) if k < len(gibbs) else k
+        if int(record_every) > 1 and local_gibbs % int(record_every) != 0 and k != n - 1:
+            continue
         dual_value = ""
         if k < len(U_hist):
             try:
@@ -157,6 +160,7 @@ def run_kl(
     tol_F: float,
     jitter: float,
     max_gibbs_calls: Optional[int],
+    track_dual: bool = True,
     U0: Optional[List[np.ndarray]] = None,
 ):
     return potential_marginal_kl_descent(
@@ -170,7 +174,7 @@ def run_kl(
         jitter_log=jitter,
         tol_tr=tol_tr,
         tol_F=tol_F,
-        store_hist=True,
+        store_hist=track_dual,
         project_pi=True,
         U0=U0,
         max_gibbs_calls=max_gibbs_calls,
@@ -190,6 +194,7 @@ def run_md(
     tol_inner: float,
     jitter: float,
     max_gibbs_calls: Optional[int],
+    track_dual: bool = True,
     U0: Optional[List[np.ndarray]] = None,
 ):
     return md_type_sinkhorn_potential(
@@ -203,7 +208,7 @@ def run_md(
         jitter=jitter,
         M_inner=int(M),
         tol_inner=tol_inner,
-        keep_U_hist=True,
+        keep_U_hist=track_dual,
         project_pi=True,
         U0=U0,
         max_gibbs_calls=max_gibbs_calls,
@@ -232,6 +237,7 @@ def run_case(args: argparse.Namespace) -> List[Dict[str, Any]]:
                 tol_F=args.tol_F,
                 jitter=args.jitter,
                 max_gibbs_calls=args.max_gibbs_calls,
+                track_dual=not args.no_dual,
             )
             cold.U_hist = cold.U_hist or []
             rows.extend(
@@ -248,6 +254,7 @@ def run_case(args: argparse.Namespace) -> List[Dict[str, Any]]:
                     H=H,
                     gammas=gammas,
                     dims=dims,
+                    record_every=args.record_every,
                 )
             )
 
@@ -292,6 +299,7 @@ def run_case(args: argparse.Namespace) -> List[Dict[str, Any]]:
                 tol_F=args.tol_F,
                 jitter=args.jitter,
                 max_gibbs_calls=remaining_budget(args.max_gibbs_calls, warmup),
+                track_dual=not args.no_dual,
                 U0=warmup.U_list,
             )
             warm.U_hist = warm.U_hist or []
@@ -311,6 +319,7 @@ def run_case(args: argparse.Namespace) -> List[Dict[str, Any]]:
                     dims=dims,
                     gibbs_offset=int(warmup.gibbs_calls),
                     warmup_gibbs_calls=int(warmup.gibbs_calls),
+                    record_every=args.record_every,
                 )
             )
 
@@ -329,6 +338,7 @@ def run_case(args: argparse.Namespace) -> List[Dict[str, Any]]:
                 tol_inner=args.tol_inner,
                 jitter=args.jitter,
                 max_gibbs_calls=args.max_gibbs_calls,
+                track_dual=not args.no_dual,
             )
             rows.extend(
                 rows_from_result(
@@ -344,6 +354,7 @@ def run_case(args: argparse.Namespace) -> List[Dict[str, Any]]:
                     H=H,
                     gammas=gammas,
                     dims=dims,
+                    record_every=args.record_every,
                 )
             )
 
@@ -389,6 +400,7 @@ def run_case(args: argparse.Namespace) -> List[Dict[str, Any]]:
                 tol_inner=args.tol_inner,
                 jitter=args.jitter,
                 max_gibbs_calls=remaining_budget(args.max_gibbs_calls, warmup),
+                track_dual=not args.no_dual,
                 U0=warmup.U_list,
             )
             rows.extend(
@@ -407,6 +419,7 @@ def run_case(args: argparse.Namespace) -> List[Dict[str, Any]]:
                     dims=dims,
                     gibbs_offset=int(warmup.gibbs_calls),
                     warmup_gibbs_calls=int(warmup.gibbs_calls),
+                    record_every=args.record_every,
                 )
             )
 
@@ -424,6 +437,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--q", type=float, default=10.0)
     parser.add_argument("--T", type=int, default=100000)
     parser.add_argument("--max_gibbs_calls", type=int, default=100000)
+    parser.add_argument("--record_every", type=int, default=1)
+    parser.add_argument("--no_dual", action="store_true")
     parser.add_argument("--modes", default="cold,warm")
     parser.add_argument("--M_list", default="1,2,5")
     parser.add_argument("--tol_tr", type=float, default=1e-4)
