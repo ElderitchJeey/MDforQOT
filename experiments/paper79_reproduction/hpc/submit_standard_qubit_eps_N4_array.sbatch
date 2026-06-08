@@ -31,10 +31,10 @@ COMMON_ARGS=(
 python -m experiments.paper79_reproduction.hpc.run_qubit_eps_task \
   "${COMMON_ARGS[@]}" \
   --method_group all \
-  --T_kl 100000 \
-  --T_md 100000 \
+  --T_kl 1000000 \
+  --T_md 1000000 \
   --lbfgs_max_iter 100000 \
-  --max_gibbs_calls 100000 \
+  --max_gibbs_calls 1000000 \
   --tol_tr 1e-4 \
   --tol_f 1e-8 \
   --outdir results/hpc_standard_qubit_eps_N4/cold
@@ -43,8 +43,8 @@ python -m experiments.paper79_reproduction.hpc.run_warm_qubit_eps_task \
   "${COMMON_ARGS[@]}" \
   --eps0 1 \
   --q 10 \
-  --max_inner 100000 \
-  --max_gibbs_calls 100000 \
+  --max_inner 1000000 \
+  --max_gibbs_calls 1000000 \
   --inner_tol 1e-2 \
   --final_tol 1e-4 \
   --tol_tr 1e-4 \

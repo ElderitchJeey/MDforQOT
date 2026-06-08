@@ -378,7 +378,7 @@ def run_instance_for_eps(args: argparse.Namespace, *, experiment: str, index: in
                 dims=dims,
                 eps=eps,
                 max_iter=args.lbfgs_max_iter,
-                tol=-1.0 if args.lbfgs_split_rows else args.lbfgs_tol,
+                tol=-1.0 if getattr(args, "lbfgs_split_rows", True) else args.lbfgs_tol,
             )
             row = summarize_solver_result(
                 label="L-BFGS entropy dual (fixed budget)",
@@ -391,7 +391,7 @@ def run_instance_for_eps(args: argparse.Namespace, *, experiment: str, index: in
                 eps=eps,
             )
             row["status"] = "ok"
-            row["lbfgs_run_mode"] = "fixed_budget" if args.lbfgs_split_rows else "tol_stopped"
+            row["lbfgs_run_mode"] = "fixed_budget" if getattr(args, "lbfgs_split_rows", True) else "tol_stopped"
         except Exception as exc:
             row = {
                 "method": "L-BFGS entropy dual (fixed budget)",
@@ -399,7 +399,7 @@ def run_instance_for_eps(args: argparse.Namespace, *, experiment: str, index: in
             }
             res = None
         result_entries.append({"row": row, "res": res, "M_inner": None})
-        if res is not None and args.lbfgs_split_rows:
+        if res is not None and getattr(args, "lbfgs_split_rows", True):
             result_entries.append(
                 {
                     "row": make_lbfgs_first_hit_row(res=res, args=args),

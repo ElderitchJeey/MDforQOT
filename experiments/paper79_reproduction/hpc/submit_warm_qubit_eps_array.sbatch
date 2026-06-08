@@ -28,4 +28,5 @@ python -m experiments.paper79_reproduction.hpc.run_warm_qubit_eps_task \
   --seeds 0 \
   --eps0 1 \
   --q 10 \
-  --max_inner 100000
+  --max_inner 1000000 \
+  --max_gibbs_calls 1000000
