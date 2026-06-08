@@ -220,6 +220,7 @@ def run_instance_for_eps(args: argparse.Namespace, *, experiment: str, index: in
                 dims=dims,
                 tol_f=args.tol_f,
                 tol_tr=args.tol_tr,
+                eps=eps,
             )
             row["status"] = "ok"
         except Exception as exc:
@@ -255,6 +256,7 @@ def run_instance_for_eps(args: argparse.Namespace, *, experiment: str, index: in
                     dims=dims,
                     tol_f=args.tol_f,
                     tol_tr=args.tol_tr,
+                    eps=eps,
                 )
                 row["status"] = "ok"
             except Exception as exc:
@@ -290,6 +292,7 @@ def run_instance_for_eps(args: argparse.Namespace, *, experiment: str, index: in
                     dims=dims,
                     tol_f=args.tol_f,
                     tol_tr=args.tol_tr,
+                    eps=eps,
                 )
                 row["status"] = "ok"
             except Exception as exc:
@@ -358,10 +361,12 @@ def add_cross_method_consistency(entries: List[Dict[str, Any]], args: argparse.N
             entry["row"]["same_limit_to_lbfgs"] = ""
             entry["row"]["dist_pi_to_lbfgs"] = ""
             entry["row"]["objective_gap_to_lbfgs"] = ""
+            entry["row"]["dual_gap_to_lbfgs"] = ""
         return
 
     ref_res = ref["res"]
     ref_cost = ref["row"].get("final_cost")
+    ref_dual = ref["row"].get("final_dual_value")
 
     for entry in entries:
         row = entry["row"]
@@ -370,12 +375,14 @@ def add_cross_method_consistency(entries: List[Dict[str, Any]], args: argparse.N
             row["same_limit_to_lbfgs"] = ""
             row["dist_pi_to_lbfgs"] = ""
             row["objective_gap_to_lbfgs"] = ""
+            row["dual_gap_to_lbfgs"] = ""
             continue
 
         if res is ref_res:
             row["same_limit_to_lbfgs"] = True
             row["dist_pi_to_lbfgs"] = 0.0
             row["objective_gap_to_lbfgs"] = 0.0
+            row["dual_gap_to_lbfgs"] = 0.0
             continue
 
         try:
@@ -404,6 +411,14 @@ def add_cross_method_consistency(entries: List[Dict[str, Any]], args: argparse.N
         else:
             row["objective_gap_to_lbfgs"] = ""
 
+        try:
+            if ref_dual not in (None, "") and row.get("final_dual_value") not in (None, ""):
+                row["dual_gap_to_lbfgs"] = float(row["final_dual_value"]) - float(ref_dual)
+            else:
+                row["dual_gap_to_lbfgs"] = ""
+        except Exception:
+            row["dual_gap_to_lbfgs"] = ""
+
 
 def fieldnames_union(rows: Iterable[Dict[str, Any]]) -> List[str]:
     names: List[str] = []
@@ -422,6 +437,7 @@ def fieldnames_union(rows: Iterable[Dict[str, Any]]) -> List[str]:
         "time_sec",
         "gibbs_calls",
         "final_cost",
+        "final_dual_value",
         "final_F_marg",
         "final_e_tr",
         "hit_F_iter",
@@ -431,6 +447,7 @@ def fieldnames_union(rows: Iterable[Dict[str, Any]]) -> List[str]:
         "same_limit_to_lbfgs",
         "dist_pi_to_lbfgs",
         "objective_gap_to_lbfgs",
+        "dual_gap_to_lbfgs",
     ]
     for name in preferred:
         seen.add(name)

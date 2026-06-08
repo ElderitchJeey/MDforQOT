@@ -17,6 +17,7 @@ import numpy as np
 from src.annealed_solvers import annealed_eqot_solver
 from src.SolverofEQOT import md_type_sinkhorn_potential, potential_marginal_kl_descent
 
+from .metrics import entropic_dual_value
 from .run_lbgfs_vs_ours import parse_csv_ints
 from .run_small_qubit_trend import make_small_instance
 
@@ -40,6 +41,9 @@ def rows_from_result(
     N: int,
     seed: int,
     eps: float,
+    H: np.ndarray,
+    gammas: List[np.ndarray],
+    dims: List[int],
     gibbs_offset: int = 0,
     warmup_gibbs_calls: int = 0,
 ) -> List[Dict[str, Any]]:
@@ -47,11 +51,18 @@ def rows_from_result(
     e = list(getattr(res, "e_tr_list", []) or [])
     times = list(getattr(res, "times", []) or [])
     gibbs = list(getattr(res, "gibbs_calls_list", []) or [])
+    U_hist = list(getattr(res, "U_hist", []) or [])
     n = max(len(F), len(e), len(times), len(gibbs))
 
     rows: List[Dict[str, Any]] = []
     for k in range(n):
         local_gibbs = int(gibbs[k]) if k < len(gibbs) else k
+        dual_value = ""
+        if k < len(U_hist):
+            try:
+                dual_value = entropic_dual_value(H=H, U_list=U_hist[k], gammas=gammas, dims=dims, eps=eps)
+            except Exception:
+                dual_value = ""
         rows.append(
             {
                 "small_kind": small_kind,
@@ -69,6 +80,7 @@ def rows_from_result(
                 "time_sec": float(times[k]) if k < len(times) else "",
                 "F_marg": float(F[k]) if k < len(F) else "",
                 "e_tr": float(e[k]) if k < len(e) else "",
+                "dual_value": dual_value,
                 "converged_final": bool(getattr(res, "converged", False)),
             }
         )
@@ -83,15 +95,25 @@ def rows_from_warmup_stages(
     case: str,
     N: int,
     seed: int,
+    H: np.ndarray,
+    gammas: List[np.ndarray],
+    dims: List[int],
 ) -> List[Dict[str, Any]]:
     eps_list = list(getattr(warmup, "stage_eps_list", []) or [])
     gibbs = list(getattr(warmup, "gibbs_calls_list", []) or [])
     e = list(getattr(warmup, "e_tr_list", []) or [])
     F = list(getattr(warmup, "F_list", []) or [])
     times = list(getattr(warmup, "times", []) or [])
+    U_hist = list(getattr(warmup, "U_hist", []) or [])
 
     rows: List[Dict[str, Any]] = []
     for k, eps in enumerate(eps_list):
+        dual_value = ""
+        if k < len(U_hist):
+            try:
+                dual_value = entropic_dual_value(H=H, U_list=U_hist[k], gammas=gammas, dims=dims, eps=float(eps))
+            except Exception:
+                dual_value = ""
         rows.append(
             {
                 "small_kind": small_kind,
@@ -109,6 +131,7 @@ def rows_from_warmup_stages(
                 "time_sec": float(times[k]) if k < len(times) else "",
                 "F_marg": float(F[k]) if k < len(F) else "",
                 "e_tr": float(e[k]) if k < len(e) else "",
+                "dual_value": dual_value,
                 "converged_final": bool(getattr(warmup, "converged", False)),
             }
         )
@@ -147,7 +170,7 @@ def run_kl(
         jitter_log=jitter,
         tol_tr=tol_tr,
         tol_F=tol_F,
-        store_hist=False,
+        store_hist=True,
         project_pi=True,
         U0=U0,
         max_gibbs_calls=max_gibbs_calls,
@@ -180,6 +203,7 @@ def run_md(
         jitter=jitter,
         M_inner=int(M),
         tol_inner=tol_inner,
+        keep_U_hist=True,
         project_pi=True,
         U0=U0,
         max_gibbs_calls=max_gibbs_calls,
@@ -209,6 +233,7 @@ def run_case(args: argparse.Namespace) -> List[Dict[str, Any]]:
                 jitter=args.jitter,
                 max_gibbs_calls=args.max_gibbs_calls,
             )
+            cold.U_hist = cold.U_hist or []
             rows.extend(
                 rows_from_result(
                     res=cold,
@@ -220,6 +245,9 @@ def run_case(args: argparse.Namespace) -> List[Dict[str, Any]]:
                     N=args.N,
                     seed=args.seed,
                     eps=args.eps,
+                    H=H,
+                    gammas=gammas,
+                    dims=dims,
                 )
             )
 
@@ -238,8 +266,21 @@ def run_case(args: argparse.Namespace) -> List[Dict[str, Any]]:
                 tol_F=None,
                 jitter=args.jitter,
                 project_pi=True,
+                return_history=True,
             )
-            rows.extend(rows_from_warmup_stages(warmup=warmup, method=method, small_kind=args.kind, case=args.case, N=args.N, seed=args.seed))
+            rows.extend(
+                rows_from_warmup_stages(
+                    warmup=warmup,
+                    method=method,
+                    small_kind=args.kind,
+                    case=args.case,
+                    N=args.N,
+                    seed=args.seed,
+                    H=H,
+                    gammas=gammas,
+                    dims=dims,
+                )
+            )
             warm = run_kl(
                 H=H,
                 gammas=gammas,
@@ -253,6 +294,7 @@ def run_case(args: argparse.Namespace) -> List[Dict[str, Any]]:
                 max_gibbs_calls=remaining_budget(args.max_gibbs_calls, warmup),
                 U0=warmup.U_list,
             )
+            warm.U_hist = warm.U_hist or []
             rows.extend(
                 rows_from_result(
                     res=warm,
@@ -264,6 +306,9 @@ def run_case(args: argparse.Namespace) -> List[Dict[str, Any]]:
                     N=args.N,
                     seed=args.seed,
                     eps=args.eps,
+                    H=H,
+                    gammas=gammas,
+                    dims=dims,
                     gibbs_offset=int(warmup.gibbs_calls),
                     warmup_gibbs_calls=int(warmup.gibbs_calls),
                 )
@@ -296,6 +341,9 @@ def run_case(args: argparse.Namespace) -> List[Dict[str, Any]]:
                     N=args.N,
                     seed=args.seed,
                     eps=args.eps,
+                    H=H,
+                    gammas=gammas,
+                    dims=dims,
                 )
             )
 
@@ -314,8 +362,21 @@ def run_case(args: argparse.Namespace) -> List[Dict[str, Any]]:
                 tol_F=None,
                 jitter=args.jitter,
                 project_pi=True,
+                return_history=True,
             )
-            rows.extend(rows_from_warmup_stages(warmup=warmup, method=method, small_kind=args.kind, case=args.case, N=args.N, seed=args.seed))
+            rows.extend(
+                rows_from_warmup_stages(
+                    warmup=warmup,
+                    method=method,
+                    small_kind=args.kind,
+                    case=args.case,
+                    N=args.N,
+                    seed=args.seed,
+                    H=H,
+                    gammas=gammas,
+                    dims=dims,
+                )
+            )
             warm = run_md(
                 H=H,
                 gammas=gammas,
@@ -341,6 +402,9 @@ def run_case(args: argparse.Namespace) -> List[Dict[str, Any]]:
                     N=args.N,
                     seed=args.seed,
                     eps=args.eps,
+                    H=H,
+                    gammas=gammas,
+                    dims=dims,
                     gibbs_offset=int(warmup.gibbs_calls),
                     warmup_gibbs_calls=int(warmup.gibbs_calls),
                 )

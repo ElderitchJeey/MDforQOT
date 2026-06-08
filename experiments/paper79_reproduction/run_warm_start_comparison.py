@@ -12,6 +12,7 @@ import numpy as np
 from src.annealed_solvers import annealed_eqot_solver
 from src.SolverofEQOT import F_marg, md_type_sinkhorn_potential, marginal_trace_errors, potential_marginal_kl_descent
 
+from .metrics import entropic_dual_value
 from .run_small_qubit_trend import make_small_instance
 from .run_wasserstein_trend import make_wasserstein_instance
 
@@ -34,6 +35,7 @@ def summarize_result(
     H: np.ndarray,
     gammas: List[np.ndarray],
     dims: List[int],
+    eps: float,
     warmup: Any = None,
 ) -> Dict[str, Any]:
     pi = res.pi
@@ -44,6 +46,16 @@ def summarize_result(
     run_time = float((getattr(res, "times", []) or [0.0])[-1])
     e_list = list(getattr(res, "e_tr_list", []) or [])
     gibbs_list = list(getattr(res, "gibbs_calls_list", []) or [])
+    try:
+        dual_value = entropic_dual_value(
+            H=H,
+            U_list=getattr(res, "U_list"),
+            gammas=gammas,
+            dims=dims,
+            eps=float(eps),
+        )
+    except Exception:
+        dual_value = ""
     row = {
         "method": method,
         "mode": mode,
@@ -59,6 +71,7 @@ def summarize_result(
         "final_e_tr": float(np.max(per_i)),
         "final_trace_sum": float(np.sum(per_i)),
         "final_cost": float(np.real(np.trace(H @ pi))),
+        "final_dual_value": dual_value,
         "stage_gibbs_calls": ";".join(str(x) for x in (getattr(warmup, "stage_gibbs_calls_list", None) or [])),
         "stage_iters": ";".join(str(x) for x in (getattr(warmup, "stage_iters_list", None) or [])),
         "eps_schedule": ";".join(str(x) for x in (getattr(warmup, "stage_eps_list", None) or getattr(warmup, "eps_schedule", None) or [])),
@@ -152,7 +165,7 @@ def main() -> None:
             project_pi=True,
             max_gibbs_calls=args.max_gibbs_calls,
         )
-        rows.append(summarize_result(method=label_method, mode="cold", res=cold, H=H, gammas=gammas, dims=dims))
+        rows.append(summarize_result(method=label_method, mode="cold", res=cold, H=H, gammas=gammas, dims=dims, eps=args.eps_final))
         warmup = None
         if warm_eps_schedule:
             warmup = annealed_eqot_solver(
@@ -185,7 +198,7 @@ def main() -> None:
             U0=warmup.U_list if warmup is not None else None,
             max_gibbs_calls=remaining_budget(warmup),
         )
-        rows.append(summarize_result(method=label_method, mode="warm_matched", res=warm, warmup=warmup, H=H, gammas=gammas, dims=dims))
+        rows.append(summarize_result(method=label_method, mode="warm_matched", res=warm, warmup=warmup, H=H, gammas=gammas, dims=dims, eps=args.eps_final))
 
     for M in M_list:
         cold = md_type_sinkhorn_potential(
@@ -202,7 +215,7 @@ def main() -> None:
             project_pi=True,
             max_gibbs_calls=args.max_gibbs_calls,
         )
-        rows.append(summarize_result(method=f"MD-Sinkhorn (M={M})", mode="cold", res=cold, H=H, gammas=gammas, dims=dims))
+        rows.append(summarize_result(method=f"MD-Sinkhorn (M={M})", mode="cold", res=cold, H=H, gammas=gammas, dims=dims, eps=args.eps_final))
         warmup = None
         if warm_eps_schedule:
             warmup = annealed_eqot_solver(
@@ -235,7 +248,7 @@ def main() -> None:
             U0=warmup.U_list if warmup is not None else None,
             max_gibbs_calls=remaining_budget(warmup),
         )
-        rows.append(summarize_result(method=f"MD-Sinkhorn (M={M})", mode="warm_matched", res=warm, warmup=warmup, H=H, gammas=gammas, dims=dims))
+        rows.append(summarize_result(method=f"MD-Sinkhorn (M={M})", mode="warm_matched", res=warm, warmup=warmup, H=H, gammas=gammas, dims=dims, eps=args.eps_final))
 
     for row in rows:
         row.update(metadata)
