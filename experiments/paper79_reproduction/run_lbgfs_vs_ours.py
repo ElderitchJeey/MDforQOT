@@ -21,6 +21,7 @@ import argparse
 import csv
 import json
 import time
+from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, Iterable, List, Optional, Sequence
@@ -102,6 +103,8 @@ def make_result_from_lbfgs(
     H: np.ndarray,
     gammas,
     dims,
+    e_tr_history: Optional[Sequence[float]] = None,
+    gibbs_history: Optional[Sequence[int]] = None,
 ) -> SimpleNamespace:
     """Convert paper79 L-BFGS output to the repo metric protocol."""
 
@@ -111,19 +114,135 @@ def make_result_from_lbfgs(
     e = float(np.max(marginal_trace_errors(pi, gammas, dims)))
     n_iters = int(state["n_iters"])
     tol_reached = bool(state["tol_reached"])
+    e_list = [float(x) for x in e_tr_history] if e_tr_history is not None else [e]
+    gibbs_list = [int(x) for x in gibbs_history] if gibbs_history is not None else [n_iters]
+    total_gibbs = int(state.get("gibbs_calls", gibbs_list[-1] if gibbs_list else n_iters))
 
     return SimpleNamespace(
-        F_list=[f],
-        e_tr_list=[e],
+        F_list=[],
+        e_tr_list=e_list,
         per_i_tr_list=[marginal_trace_errors(pi, gammas, dims)],
         times=[float(elapsed)],
         pi=pi,
         U_list=list(state["params"]),
         converged=tol_reached,
         n_iters=n_iters,
-        gibbs_calls=n_iters,
-        gibbs_calls_list=[n_iters],
+        gibbs_calls=total_gibbs,
+        gibbs_calls_list=gibbs_list,
     )
+
+
+def run_lbfgs_with_error_history(
+    *,
+    cost_matrix,
+    ptraces,
+    reg: float,
+    max_iter: int,
+    tol: float,
+    verbose: bool = False,
+    log_every: int = 50,
+) -> Dict[str, Any]:
+    """Run paper79 L-BFGS while recording marginal trace error every Gibbs call.
+
+    For the entropy dual, the gradient of the minimized objective is the
+    marginal mismatch of the current Gibbs state. We therefore get an
+    iteration-resolved marginal-error trajectory without reconstructing the
+    primal density matrix at every step.
+    """
+
+    ensure_paper79_import_path()
+    import jax  # type: ignore
+    import jax.numpy as jnp  # type: ignore
+    import optax  # type: ignore
+    import optax.tree_utils as otu  # type: ignore
+    from utils import get_entropy_reg_qot  # type: ignore
+
+    def _trace_norm_hermitian(A):
+        Hh = 0.5 * (A + jnp.conj(jnp.swapaxes(A, -1, -2)))
+        return jnp.sum(jnp.abs(jnp.linalg.eigvalsh(Hh)))
+
+    def _max_trace_error(grad):
+        vals = [_trace_norm_hermitian(g) for g in grad]
+        return jnp.max(jnp.stack(vals))
+
+    @partial(jax.jit, static_argnums=(3, 4, 5, 6))
+    def _run(cost_matrix, ptraces, reg, max_iter, tol, verbose, log_every):
+        fun = lambda dls: -get_entropy_reg_qot(dls, ptraces, cost_matrix, reg)
+        init_duals = jax.tree_util.tree_map(jnp.zeros_like, ptraces)
+        opt = optax.lbfgs()
+        value_and_grad_fun = optax.value_and_grad_from_state(fun)
+        state0 = opt.init(init_duals)
+
+        loss_log0 = jnp.full((max_iter,), jnp.nan)
+        e_tr_log0 = jnp.full((max_iter,), jnp.nan)
+        grad_norm_log0 = jnp.full((max_iter,), jnp.nan)
+        gibbs_log0 = jnp.zeros((max_iter,), dtype=jnp.int32)
+
+        def step(carry):
+            params, state, loss_log, e_tr_log, grad_norm_log, gibbs_log, it, last_grad_norm, total_gibbs = carry
+            value, grad = value_and_grad_fun(params, state=state)
+            e_tr = _max_trace_error(grad)
+            grad_norm = otu.tree_l2_norm(grad)
+
+            updates, state = opt.update(
+                grad,
+                state,
+                params,
+                value=value,
+                grad=grad,
+                value_fn=fun,
+            )
+            params = optax.apply_updates(params, updates)
+            line_steps = otu.tree_get(state, "num_linesearch_steps", default=jnp.asarray(0, dtype=jnp.int32))
+            total_gibbs = total_gibbs + 1 + line_steps
+
+            loss_log = loss_log.at[it].set(-value)
+            e_tr_log = e_tr_log.at[it].set(e_tr)
+            grad_norm_log = grad_norm_log.at[it].set(grad_norm)
+            gibbs_log = gibbs_log.at[it].set(total_gibbs)
+
+            cond = verbose & (it % log_every == 0)
+
+            def _print(args):
+                i, v, err, calls = args
+                jax.debug.print("[iter {i}] value={v:.6e} e_tr={err:.6e} gibbs={calls}", i=i, v=v, err=err, calls=calls)
+
+            _ = jax.lax.cond(cond, _print, lambda x: None, operand=(it, value, e_tr, total_gibbs))
+            return params, state, loss_log, e_tr_log, grad_norm_log, gibbs_log, it + 1, grad_norm, total_gibbs
+
+        def cont(carry):
+            _, _, _, _, _, _, it, last_grad_norm, _ = carry
+            return (it < 2) | ((it < max_iter) & (last_grad_norm >= tol))
+
+        init_carry = (
+            init_duals,
+            state0,
+            loss_log0,
+            e_tr_log0,
+            grad_norm_log0,
+            gibbs_log0,
+            0,
+            jnp.inf,
+            jnp.asarray(0, dtype=jnp.int32),
+        )
+        params, state, loss_log, e_tr_log, grad_norm_log, gibbs_log, n_iters, last_grad_norm, total_gibbs = jax.lax.while_loop(
+            cont, step, init_carry
+        )
+        tol_reached = jnp.where(n_iters < max_iter, True, False)
+        return {
+            "params": params,
+            "n_iters": n_iters,
+            "state": state[0],
+            "loss_history": loss_log,
+            "e_tr_history": e_tr_log,
+            "grad_norm_history": grad_norm_log,
+            "gibbs_history": gibbs_log,
+            "gibbs_calls": total_gibbs,
+            "tol_reached": tol_reached,
+            "last_grad_norm": last_grad_norm,
+        }
+
+    return _run(cost_matrix, ptraces, float(reg), int(max_iter), float(tol), bool(verbose), int(log_every))
 
 
 def run_lbfgs_entropy(
@@ -139,14 +258,13 @@ def run_lbfgs_entropy(
 
     ensure_paper79_import_path()
     import jax.numpy as jnp  # type: ignore
-    from solvers import run_lbfgs  # type: ignore
     from utils.entropy import reconstruct_primal  # type: ignore
 
     cost_matrix = jnp.asarray(np.real_if_close(H))
     ptraces = tuple(jnp.asarray(np.real_if_close(g)) for g in gammas)
 
     start = time.time()
-    state = run_lbfgs(
+    state = run_lbfgs_with_error_history(
         cost_matrix=cost_matrix,
         ptraces=ptraces,
         reg=float(eps),
@@ -157,6 +275,9 @@ def run_lbfgs_entropy(
     )
     pi = np.asarray(reconstruct_primal(cost_matrix, state["params"], float(eps)), dtype=complex)
     elapsed = time.time() - start
+    n_iters = int(state["n_iters"])
+    e_tr_history = np.asarray(state.get("e_tr_history", []), dtype=float)[:n_iters]
+    gibbs_history = np.asarray(state.get("gibbs_history", []), dtype=int)[:n_iters]
     return make_result_from_lbfgs(
         state=state,
         pi=pi,
@@ -164,7 +285,54 @@ def run_lbfgs_entropy(
         H=H,
         gammas=gammas,
         dims=dims,
+        e_tr_history=e_tr_history,
+        gibbs_history=gibbs_history,
     )
+
+
+def make_lbfgs_first_hit_row(*, res: SimpleNamespace, args: argparse.Namespace) -> Dict[str, Any]:
+    """Create a trajectory-only L-BFGS row for first-hit reporting.
+
+    This row is deliberately not used as the final L-BFGS reference coupling.
+    It records when the L-BFGS marginal trajectory first reaches the requested
+    trace-error tolerances.
+    """
+
+    e = list(getattr(res, "e_tr_list", []) or [])
+    gibbs = list(getattr(res, "gibbs_calls_list", []) or [])
+    primary_idx = first_hit_index(e, args.tol_tr) if e else -1
+    primary_gibbs = int(gibbs[primary_idx]) if primary_idx >= 0 and len(gibbs) == len(e) else -1
+    primary_e = float(e[primary_idx]) if primary_idx >= 0 else (float(e[-1]) if e else "")
+
+    row: Dict[str, Any] = {
+        "method": "L-BFGS entropy dual (first hit)",
+        "status": "ok",
+        "converged": bool(primary_idx >= 0),
+        "iters": primary_gibbs if primary_gibbs >= 0 else int(getattr(res, "n_iters", 0) or 0),
+        "time_sec": "",
+        "gibbs_calls": primary_gibbs if primary_gibbs >= 0 else int(getattr(res, "gibbs_calls", 0) or 0),
+        "final_cost": "",
+        "final_dual_value": "",
+        "final_F_marg": "",
+        "final_e_tr": primary_e,
+        "hit_F_iter": "",
+        "hit_tr_iter": primary_idx,
+        "hit_F_gibbs": "",
+        "hit_tr_gibbs": primary_gibbs,
+    }
+    for tol in args.tol_f_grid:
+        lab = tol_label(tol)
+        row[f"hit_F_le_{lab}"] = ""
+        row[f"hit_F_iter_le_{lab}"] = ""
+        row[f"hit_F_gibbs_le_{lab}"] = ""
+    for tol in args.tol_tr_grid:
+        lab = tol_label(tol)
+        idx = first_hit_index(e, tol) if e else -1
+        hit_gibbs = int(gibbs[idx]) if idx >= 0 and len(gibbs) == len(e) else ""
+        row[f"hit_tr_le_{lab}"] = bool(idx >= 0) if e else ""
+        row[f"hit_tr_iter_le_{lab}"] = idx if e else ""
+        row[f"hit_tr_gibbs_le_{lab}"] = hit_gibbs
+    return row
 
 
 def row_with_context(
@@ -210,10 +378,10 @@ def run_instance_for_eps(args: argparse.Namespace, *, experiment: str, index: in
                 dims=dims,
                 eps=eps,
                 max_iter=args.lbfgs_max_iter,
-                tol=args.lbfgs_tol,
+                tol=-1.0 if args.lbfgs_split_rows else args.lbfgs_tol,
             )
             row = summarize_solver_result(
-                label="L-BFGS entropy dual",
+                label="L-BFGS entropy dual (fixed budget)",
                 res=res,
                 H=H,
                 gammas=gammas,
@@ -223,10 +391,23 @@ def run_instance_for_eps(args: argparse.Namespace, *, experiment: str, index: in
                 eps=eps,
             )
             row["status"] = "ok"
+            row["lbfgs_run_mode"] = "fixed_budget" if args.lbfgs_split_rows else "tol_stopped"
         except Exception as exc:
-            row = {"method": "L-BFGS entropy dual", "status": f"error: {type(exc).__name__}: {exc}"}
+            row = {
+                "method": "L-BFGS entropy dual (fixed budget)",
+                "status": f"error: {type(exc).__name__}: {exc}",
+            }
             res = None
         result_entries.append({"row": row, "res": res, "M_inner": None})
+        if res is not None and args.lbfgs_split_rows:
+            result_entries.append(
+                {
+                    "row": make_lbfgs_first_hit_row(res=res, args=args),
+                    "res": None,
+                    "M_inner": None,
+                    "trajectory_only": True,
+                }
+            )
 
     if "kl" in args.methods:
         kl_rules = [args.eta_kl_rule] if args.eta_kl is not None else getattr(args, "eta_kl_rules", [args.eta_kl_rule])
@@ -327,6 +508,8 @@ def add_tolerance_grid_metrics(entries: List[Dict[str, Any]], args: argparse.Nam
     """Add hit columns for several reporting tolerances."""
 
     for entry in entries:
+        if entry.get("trajectory_only"):
+            continue
         row = entry["row"]
         res = entry.get("res")
         F = list(getattr(res, "F_list", []) or []) if res is not None else []
@@ -354,7 +537,10 @@ def add_cross_method_consistency(entries: List[Dict[str, Any]], args: argparse.N
     from src.metrics import pi_distance, same_limit
 
     successful = [entry for entry in entries if entry.get("res") is not None and entry["row"].get("status") == "ok"]
-    ref = next((entry for entry in successful if entry["row"].get("method") == "L-BFGS entropy dual"), None)
+    ref = next(
+        (entry for entry in successful if entry["row"].get("method") == "L-BFGS entropy dual (fixed budget)"),
+        None,
+    )
 
     if ref is None:
         for entry in entries:
@@ -506,6 +692,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--eta_kl_rules", default="eps_over_N,eps")
     parser.add_argument("--lbfgs_max_iter", type=int, default=1000)
     parser.add_argument("--lbfgs_tol", type=float, default=1e-6)
+    parser.add_argument("--no_lbfgs_split_rows", action="store_true")
     parser.add_argument("--tol_f", type=float, default=1e-8)
     parser.add_argument("--tol_tr", type=float, default=1e-8)
     parser.add_argument("--tol_f_grid", default="1e-3,1e-4,1e-5")
@@ -531,6 +718,7 @@ def main() -> None:
     args = parser.parse_args()
 
     args.methods = [x.strip().lower() for x in args.methods.split(",") if x.strip()]
+    args.lbfgs_split_rows = not args.no_lbfgs_split_rows
     args.M_list = parse_csv_ints(args.M_list)
     args.eta_kl_rules = parse_csv_strings(args.eta_kl_rules)
     for eta_rule in args.eta_kl_rules:
