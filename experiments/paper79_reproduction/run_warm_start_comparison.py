@@ -12,7 +12,8 @@ import numpy as np
 from src.annealed_solvers import annealed_eqot_solver
 from src.SolverofEQOT import F_marg, md_type_sinkhorn_potential, marginal_trace_errors, potential_marginal_kl_descent
 
-from .metrics import entropic_dual_value
+from .metrics import entropic_dual_value, entropic_primal_cost, primal_cost, von_neumann_entropy_term
+from .run_lbgfs_vs_ours import save_final_state
 from .run_small_qubit_trend import make_small_instance
 from .run_wasserstein_trend import make_wasserstein_instance
 
@@ -56,6 +57,15 @@ def summarize_result(
         )
     except Exception:
         dual_value = ""
+    linear_cost = primal_cost(H, pi)
+    entropy_term = von_neumann_entropy_term(pi)
+    entropic_primal = entropic_primal_cost(H, pi, eps)
+    primal_dual_gap = ""
+    try:
+        if dual_value not in (None, ""):
+            primal_dual_gap = float(entropic_primal) - float(dual_value)
+    except Exception:
+        primal_dual_gap = ""
     row = {
         "method": method,
         "mode": mode,
@@ -70,8 +80,12 @@ def summarize_result(
         "final_F_marg": float(F_marg(pi, gammas, dims)),
         "final_e_tr": float(np.max(per_i)),
         "final_trace_sum": float(np.sum(per_i)),
-        "final_cost": float(np.real(np.trace(H @ pi))),
+        "final_cost": entropic_primal,
+        "final_entropic_primal": entropic_primal,
+        "final_linear_cost": linear_cost,
+        "final_entropy": entropy_term,
         "final_dual_value": dual_value,
+        "final_primal_dual_gap": primal_dual_gap,
         "stage_gibbs_calls": ";".join(str(x) for x in (getattr(warmup, "stage_gibbs_calls_list", None) or [])),
         "stage_iters": ";".join(str(x) for x in (getattr(warmup, "stage_iters_list", None) or [])),
         "eps_schedule": ";".join(str(x) for x in (getattr(warmup, "stage_eps_list", None) or getattr(warmup, "eps_schedule", None) or [])),
@@ -126,6 +140,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--jitter", type=float, default=1e-10)
     parser.add_argument("--tol_tr", type=float, default=1e-8)
     parser.add_argument("--tol_F", type=float, default=1e-8)
+    parser.add_argument("--skip_cold", action="store_true")
+    parser.add_argument("--save_final_state", action="store_true")
+    parser.add_argument("--state_dir", type=Path, default=None)
     parser.add_argument("--out", type=Path, default=Path("results") / "warm_start_comparison.csv")
     return parser
 
@@ -149,23 +166,30 @@ def main() -> None:
         return max(1, int(args.max_gibbs_calls) - used)
 
     rows: List[Dict[str, Any]] = []
+    row_results: List[Any] = []
+
+    def add_row(row: Dict[str, Any], res: Any) -> None:
+        rows.append(row)
+        row_results.append(res)
+
     kl_specs = [("KL descent (eta=eps/N)", "eps_over_N"), ("KL descent (eta=eps)", "eps")]
     for label_method, eta_rule in kl_specs:
-        cold = potential_marginal_kl_descent(
-            H=H,
-            gammas=gammas,
-            eps=args.eps_final,
-            dims=dims,
-            T=args.max_inner,
-            eta=None,
-            eta_rule=eta_rule,
-            jitter_log=args.jitter,
-            tol_tr=args.tol_tr,
-            tol_F=args.tol_F,
-            project_pi=True,
-            max_gibbs_calls=args.max_gibbs_calls,
-        )
-        rows.append(summarize_result(method=label_method, mode="cold", res=cold, H=H, gammas=gammas, dims=dims, eps=args.eps_final))
+        if not args.skip_cold:
+            cold = potential_marginal_kl_descent(
+                H=H,
+                gammas=gammas,
+                eps=args.eps_final,
+                dims=dims,
+                T=args.max_inner,
+                eta=None,
+                eta_rule=eta_rule,
+                jitter_log=args.jitter,
+                tol_tr=args.tol_tr,
+                tol_F=args.tol_F,
+                project_pi=True,
+                max_gibbs_calls=args.max_gibbs_calls,
+            )
+            add_row(summarize_result(method=label_method, mode="cold", res=cold, H=H, gammas=gammas, dims=dims, eps=args.eps_final), cold)
         warmup = None
         if warm_eps_schedule:
             warmup = annealed_eqot_solver(
@@ -198,24 +222,25 @@ def main() -> None:
             U0=warmup.U_list if warmup is not None else None,
             max_gibbs_calls=remaining_budget(warmup),
         )
-        rows.append(summarize_result(method=label_method, mode="warm_matched", res=warm, warmup=warmup, H=H, gammas=gammas, dims=dims, eps=args.eps_final))
+        add_row(summarize_result(method=label_method, mode="warm_matched", res=warm, warmup=warmup, H=H, gammas=gammas, dims=dims, eps=args.eps_final), warm)
 
     for M in M_list:
-        cold = md_type_sinkhorn_potential(
-            H=H,
-            gammas=gammas,
-            eps=args.eps_final,
-            dims=dims,
-            T_outer=args.max_inner,
-            tol_tr=args.tol_tr,
-            tol_F=args.tol_F,
-            jitter=args.jitter,
-            M_inner=M,
-            tol_inner=1e-4,
-            project_pi=True,
-            max_gibbs_calls=args.max_gibbs_calls,
-        )
-        rows.append(summarize_result(method=f"MD-Sinkhorn (M={M})", mode="cold", res=cold, H=H, gammas=gammas, dims=dims, eps=args.eps_final))
+        if not args.skip_cold:
+            cold = md_type_sinkhorn_potential(
+                H=H,
+                gammas=gammas,
+                eps=args.eps_final,
+                dims=dims,
+                T_outer=args.max_inner,
+                tol_tr=args.tol_tr,
+                tol_F=args.tol_F,
+                jitter=args.jitter,
+                M_inner=M,
+                tol_inner=1e-4,
+                project_pi=True,
+                max_gibbs_calls=args.max_gibbs_calls,
+            )
+            add_row(summarize_result(method=f"MD-Sinkhorn (M={M})", mode="cold", res=cold, H=H, gammas=gammas, dims=dims, eps=args.eps_final), cold)
         warmup = None
         if warm_eps_schedule:
             warmup = annealed_eqot_solver(
@@ -248,9 +273,9 @@ def main() -> None:
             U0=warmup.U_list if warmup is not None else None,
             max_gibbs_calls=remaining_budget(warmup),
         )
-        rows.append(summarize_result(method=f"MD-Sinkhorn (M={M})", mode="warm_matched", res=warm, warmup=warmup, H=H, gammas=gammas, dims=dims, eps=args.eps_final))
+        add_row(summarize_result(method=f"MD-Sinkhorn (M={M})", mode="warm_matched", res=warm, warmup=warmup, H=H, gammas=gammas, dims=dims, eps=args.eps_final), warm)
 
-    for row in rows:
+    for row, res in zip(rows, row_results):
         row.update(metadata)
         row["paper79_label"] = label
         row["eps_final"] = float(args.eps_final)
@@ -260,6 +285,17 @@ def main() -> None:
         row["max_gibbs_calls"] = "" if args.max_gibbs_calls is None else int(args.max_gibbs_calls)
         row["warm_method"] = "matched"
         row["warm_variant"] = row["method"]
+        state_path = save_final_state(
+            args=args,
+            row=row,
+            res=res,
+            H=H,
+            gammas=gammas,
+            dims=dims,
+            eps=args.eps_final,
+        )
+        if state_path:
+            row["final_state_path"] = state_path
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     fields = list(rows[0].keys()) if rows else []

@@ -51,6 +51,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--tol_f", type=float, default=1e-8)
     parser.add_argument("--tol_inner", type=float, default=1e-4)
     parser.add_argument("--outdir", type=Path, default=Path("results") / "hpc_qubit_eps")
+    parser.add_argument("--save_final_state", action="store_true")
+    parser.add_argument("--state_dir", type=Path, default=None)
     return parser
 
 
@@ -108,6 +110,10 @@ def main() -> None:
     ]
     if args.max_gibbs_calls is not None:
         cmd.extend(["--max_gibbs_calls", str(args.max_gibbs_calls)])
+    if args.save_final_state:
+        cmd.append("--save_final_state")
+        if args.state_dir is not None:
+            cmd.extend(["--state_dir", str(args.state_dir / f"N{args.N}")])
     print(" ".join(cmd), flush=True)
     if args.dry_run:
         return

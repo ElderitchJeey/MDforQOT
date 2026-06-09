@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import re
 import time
 from functools import partial
 from pathlib import Path
@@ -77,6 +78,70 @@ def kl_method_label(*, eta: Optional[float], eta_rule: str) -> str:
 
 def tol_label(tol: float) -> str:
     return f"{float(tol):.0e}".replace("-", "m").replace("+", "p")
+
+
+def safe_filename(text: Any) -> str:
+    raw = str(text)
+    raw = raw.replace("eta=eps/N", "eta_eps_over_N")
+    raw = raw.replace("eta=eps", "eta_eps")
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", raw).strip("_") or "value"
+
+
+def final_state_dir(args: argparse.Namespace) -> Path:
+    state_dir = getattr(args, "state_dir", None)
+    if state_dir is not None:
+        return Path(state_dir)
+    out = Path(getattr(args, "out", Path("results") / "paper79_lbgfs_vs_ours.csv"))
+    return out.parent / f"{out.stem}_states"
+
+
+def save_final_state(
+    *,
+    args: argparse.Namespace,
+    row: Dict[str, Any],
+    res: Any,
+    H: np.ndarray,
+    gammas,
+    dims,
+    eps: float,
+) -> str:
+    """Persist final coupling/potentials for post-processing tables."""
+
+    if not getattr(args, "save_final_state", False):
+        return ""
+    if res is None:
+        return ""
+    pi = getattr(res, "pi", None)
+    U_list = getattr(res, "U_list", None)
+    if pi is None or U_list is None:
+        return ""
+
+    out_dir = final_state_dir(args)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    parts = [
+        safe_filename(row.get("experiment", "exp")),
+        safe_filename(row.get("paper79_label", row.get("paper79_index", "instance"))),
+        f"eps{safe_filename(f'{float(eps):.0e}')}",
+        safe_filename(row.get("method", "method")),
+    ]
+    if row.get("M_inner") not in (None, ""):
+        parts.append(f"M{safe_filename(row['M_inner'])}")
+    path = out_dir / ("__".join(parts) + ".npz")
+
+    payload: Dict[str, Any] = {
+        "pi": np.asarray(pi),
+        "H": np.asarray(H),
+        "dims": np.asarray(dims, dtype=int),
+        "eps": np.asarray(float(eps)),
+        "metadata_json": np.asarray(json.dumps(row, sort_keys=True, default=str)),
+    }
+    for i, gamma in enumerate(gammas):
+        payload[f"gamma_{i}"] = np.asarray(gamma)
+    for i, Ui in enumerate(U_list):
+        payload[f"U_{i}"] = np.asarray(Ui)
+
+    np.savez_compressed(path, **payload)
+    return str(path)
 
 
 def first_hit_index(values: Sequence[float], tol: float) -> int:
@@ -312,7 +377,11 @@ def make_lbfgs_first_hit_row(*, res: SimpleNamespace, args: argparse.Namespace) 
         "time_sec": "",
         "gibbs_calls": primary_gibbs if primary_gibbs >= 0 else int(getattr(res, "gibbs_calls", 0) or 0),
         "final_cost": "",
+        "final_entropic_primal": "",
+        "final_linear_cost": "",
+        "final_entropy": "",
         "final_dual_value": "",
+        "final_primal_dual_gap": "",
         "final_F_marg": "",
         "final_e_tr": primary_e,
         "hit_F_iter": "",
@@ -490,17 +559,27 @@ def run_instance_for_eps(args: argparse.Namespace, *, experiment: str, index: in
         extra = {}
         if entry["M_inner"] is not None:
             extra["M_inner"] = entry["M_inner"]
-        rows.append(
-            row_with_context(
-                entry["row"],
-                experiment=experiment,
-                index=inst.index,
-                label=inst.label,
-                eps=eps,
-                dims=dims,
-                extra=extra,
-            )
+        context_row = row_with_context(
+            entry["row"],
+            experiment=experiment,
+            index=inst.index,
+            label=inst.label,
+            eps=eps,
+            dims=dims,
+            extra=extra,
         )
+        state_path = save_final_state(
+            args=args,
+            row=context_row,
+            res=entry.get("res"),
+            H=H,
+            gammas=gammas,
+            dims=dims,
+            eps=eps,
+        )
+        if state_path:
+            context_row["final_state_path"] = state_path
+        rows.append(context_row)
     return rows
 
 
@@ -535,6 +614,14 @@ def add_cross_method_consistency(entries: List[Dict[str, Any]], args: argparse.N
     """Add final-coupling and objective consistency columns in-place."""
 
     from src.metrics import pi_distance, same_limit
+
+    def _as_float(value: Any) -> Optional[float]:
+        if value in (None, ""):
+            return None
+        try:
+            return float(value)
+        except Exception:
+            return None
 
     successful = [entry for entry in entries if entry.get("res") is not None and entry["row"].get("status") == "ok"]
     ref = next(
@@ -592,17 +679,18 @@ def add_cross_method_consistency(entries: List[Dict[str, Any]], args: argparse.N
                 row["same_limit_to_lbfgs"] = f"error: {type(exc).__name__}: {exc}"
                 row["dist_pi_to_lbfgs"] = ""
 
-        if ref_cost is not None and row.get("final_cost") is not None:
-            row["objective_gap_to_lbfgs"] = abs(float(row["final_cost"]) - float(ref_cost))
+        ref_cost_f = _as_float(ref_cost)
+        cur_cost_f = _as_float(row.get("final_cost"))
+        if ref_cost_f is not None and cur_cost_f is not None:
+            row["objective_gap_to_lbfgs"] = abs(cur_cost_f - ref_cost_f)
         else:
             row["objective_gap_to_lbfgs"] = ""
 
-        try:
-            if ref_dual not in (None, "") and row.get("final_dual_value") not in (None, ""):
-                row["dual_gap_to_lbfgs"] = float(row["final_dual_value"]) - float(ref_dual)
-            else:
-                row["dual_gap_to_lbfgs"] = ""
-        except Exception:
+        ref_dual_f = _as_float(ref_dual)
+        cur_dual_f = _as_float(row.get("final_dual_value"))
+        if ref_dual_f is not None and cur_dual_f is not None:
+            row["dual_gap_to_lbfgs"] = cur_dual_f - ref_dual_f
+        else:
             row["dual_gap_to_lbfgs"] = ""
 
 
@@ -623,7 +711,12 @@ def fieldnames_union(rows: Iterable[Dict[str, Any]]) -> List[str]:
         "time_sec",
         "gibbs_calls",
         "final_cost",
+        "final_entropic_primal",
+        "final_linear_cost",
+        "final_entropy",
         "final_dual_value",
+        "final_primal_dual_gap",
+        "final_state_path",
         "final_F_marg",
         "final_e_tr",
         "hit_F_iter",
@@ -710,6 +803,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--out", type=Path, default=Path("results") / "paper79_lbgfs_vs_ours.csv")
     parser.add_argument("--checkpoint_jsonl", type=Path, default=None)
     parser.add_argument("--no_checkpoint", action="store_true")
+    parser.add_argument(
+        "--save_final_state",
+        action="store_true",
+        help="Save final pi, potentials, H, marginals, and metadata as compressed .npz files.",
+    )
+    parser.add_argument(
+        "--state_dir",
+        type=Path,
+        default=None,
+        help="Directory for --save_final_state files. Defaults to a sibling *_states directory.",
+    )
     return parser
 
 

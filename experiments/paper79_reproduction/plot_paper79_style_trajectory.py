@@ -97,8 +97,12 @@ def plot_metric(
         include_warmup=include_warmup,
         logy=logy,
     )
+    kind = str(plot_df["small_kind"].iloc[0]) if "small_kind" in plot_df else "qubit"
+    case = str(plot_df["small_case"].iloc[0]) if "small_case" in plot_df else "mixed"
+    N = int(plot_df["N"].iloc[0]) if "N" in plot_df else 0
+    eps = float(plot_df["eps"].iloc[0]) if "eps" in plot_df else float("nan")
     fig.suptitle(
-        rf"Representative hard qubit instance: Ising mixed, $N=7$, $\varepsilon=10^{{-3}}$ ({title_suffix})"
+        rf"Representative qubit instance: {kind} {case}, $N={N}$, $\varepsilon={eps:.0e}$ ({title_suffix})"
     )
     fig.tight_layout()
     out.parent.mkdir(parents=True, exist_ok=True)

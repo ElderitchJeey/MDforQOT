@@ -17,6 +17,28 @@ def primal_cost(H: np.ndarray, pi: np.ndarray) -> float:
     return float(np.real(np.trace(np.asarray(H) @ np.asarray(pi))))
 
 
+def von_neumann_entropy_term(pi: np.ndarray, *, floor: float = 1e-300) -> float:
+    """Return Tr[pi log pi] using the Hermitian spectrum of pi.
+
+    This is the entropy term appearing in the entropic primal objective. Zero
+    eigenvalues contribute 0 in the limiting convention x log x -> 0.
+    """
+
+    P = np.asarray(pi, dtype=complex)
+    P = 0.5 * (P + P.conj().T)
+    evals = np.linalg.eigvalsh(P)
+    positive = evals[evals > floor]
+    if positive.size == 0:
+        return 0.0
+    return float(np.real(np.sum(positive * np.log(positive))))
+
+
+def entropic_primal_cost(H: np.ndarray, pi: np.ndarray, eps: float) -> float:
+    """Return Tr[H pi] + eps Tr[pi log pi]."""
+
+    return float(primal_cost(H, pi) + float(eps) * von_neumann_entropy_term(pi))
+
+
 def entropic_dual_value(
     *,
     H: np.ndarray,
@@ -78,7 +100,16 @@ def summarize_solver_result(
     """Create a row compatible with paper79-style benchmark tables."""
 
     pi = final_pi(res)
-    cost = primal_cost(H, pi)
+    linear_cost = primal_cost(H, pi)
+    entropic_cost: Any = linear_cost
+    final_entropy: Any = ""
+    if eps is not None:
+        try:
+            final_entropy = von_neumann_entropy_term(pi)
+            entropic_cost = entropic_primal_cost(H, pi, float(eps))
+        except Exception as exc:
+            final_entropy = f"error: {type(exc).__name__}: {exc}"
+            entropic_cost = f"error: {type(exc).__name__}: {exc}"
     f_list = list(getattr(res, "F_list", []) or [])
     e_list = list(getattr(res, "e_tr_list", []) or [])
     times = list(getattr(res, "times", []) or [])
@@ -91,9 +122,12 @@ def summarize_solver_result(
     gibbs_calls = int(getattr(res, "gibbs_calls", 0) or 0)
     U_list = getattr(res, "U_list", None)
     final_dual_value = ""
+    final_primal_dual_gap = ""
     if eps is not None and U_list is not None:
         try:
             final_dual_value = entropic_dual_value(H=H, U_list=U_list, gammas=gammas, dims=dims, eps=float(eps))
+            if isinstance(entropic_cost, (int, float, np.floating)):
+                final_primal_dual_gap = float(entropic_cost) - float(final_dual_value)
         except Exception as exc:
             final_dual_value = f"error: {type(exc).__name__}: {exc}"
 
@@ -108,8 +142,12 @@ def summarize_solver_result(
         "iters": n_iters,
         "time_sec": elapsed,
         "gibbs_calls": gibbs_calls,
-        "final_cost": cost,
+        "final_cost": entropic_cost,
+        "final_entropic_primal": entropic_cost,
+        "final_linear_cost": linear_cost,
+        "final_entropy": final_entropy,
         "final_dual_value": final_dual_value,
+        "final_primal_dual_gap": final_primal_dual_gap,
         "final_F_marg": final_f,
         "final_e_tr": final_e,
         "hit_F_iter": hit_f,
@@ -125,6 +163,6 @@ def summarize_solver_result(
 
     if ground_truth is not None:
         row["ground_truth"] = float(ground_truth)
-        row["objective_gap"] = abs(cost - float(ground_truth))
+        row["objective_gap"] = abs(linear_cost - float(ground_truth))
 
     return row

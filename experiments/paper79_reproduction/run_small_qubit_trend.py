@@ -152,6 +152,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--out", type=Path, default=Path("results") / "small_qubit_trend_eps1e-3.csv")
     parser.add_argument("--checkpoint_jsonl", type=Path, default=None)
     parser.add_argument("--no_checkpoint", action="store_true")
+    parser.add_argument(
+        "--save_final_state",
+        action="store_true",
+        help="Save final pi and potentials for each successful method as .npz files.",
+    )
+    parser.add_argument("--state_dir", type=Path, default=None)
     return parser
 
 

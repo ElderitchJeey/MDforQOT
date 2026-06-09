@@ -28,8 +28,10 @@ python -m experiments.paper79_reproduction.hpc.run_qubit_mixed_task \
   --method_group all \
   --T_kl 100000 \
   --T_md 100000 \
-  --lbfgs_max_iter 100000 \
+  --lbfgs_max_iter 10000 \
   --max_gibbs_calls 100000 \
   --tol_tr 1e-4 \
   --tol_f 1e-8 \
+  --save_final_state \
+  --state_dir results/hpc_qubit_scaling_N3N7/final_states \
   --outdir results/hpc_qubit_scaling_N3N7

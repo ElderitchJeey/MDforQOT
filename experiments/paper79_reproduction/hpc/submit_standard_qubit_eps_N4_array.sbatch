@@ -2,7 +2,7 @@
 #SBATCH --job-name=qot_qepsN4
 #SBATCH --output=results/hpc_standard_qubit_eps_N4/logs/%x_%A_%a.out
 #SBATCH --error=results/hpc_standard_qubit_eps_N4/logs/%x_%A_%a.err
-#SBATCH --array=0-7
+#SBATCH --array=0-3
 #SBATCH --time=48:00:00
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=64G
@@ -24,29 +24,32 @@ COMMON_ARGS=(
   --task_id "$SLURM_ARRAY_TASK_ID"
   --N 4
   --kinds ising,random
-  --eps_values 1e-3,1e-6,1e-9,1e-12
+  --eps_values 1e-5,1e-7
   --seeds 0
 )
 
 python -m experiments.paper79_reproduction.hpc.run_qubit_eps_task \
   "${COMMON_ARGS[@]}" \
-  --method_group all \
-  --T_kl 1000000 \
-  --T_md 1000000 \
-  --lbfgs_max_iter 100000 \
+  --method_group lbfgs \
+  --lbfgs_max_iter 10000 \
   --max_gibbs_calls 1000000 \
   --tol_tr 1e-4 \
   --tol_f 1e-8 \
+  --save_final_state \
+  --state_dir results/hpc_standard_qubit_eps_N4/final_states/lbfgs \
   --outdir results/hpc_standard_qubit_eps_N4/cold
 
 python -m experiments.paper79_reproduction.hpc.run_warm_qubit_eps_task \
   "${COMMON_ARGS[@]}" \
   --eps0 1 \
-  --q 10 \
+  --q 3.1622776601683795 \
   --max_inner 1000000 \
   --max_gibbs_calls 1000000 \
-  --inner_tol 1e-2 \
+  --inner_tol 1e-3 \
   --final_tol 1e-4 \
   --tol_tr 1e-4 \
   --tol_F 1e-8 \
+  --skip_cold \
+  --save_final_state \
+  --state_dir results/hpc_standard_qubit_eps_N4/final_states/warm \
   --outdir results/hpc_standard_qubit_eps_N4/warm
