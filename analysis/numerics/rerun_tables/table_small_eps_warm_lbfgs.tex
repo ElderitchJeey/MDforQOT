@@ -1,0 +1,39 @@
+\begin{table}[t]
+\centering
+\scriptsize
+\caption{Small-$\varepsilon$ qubit mixed benchmarks with $N=4$. Warm-start methods include the Gibbs calls spent in the continuation stages.}
+\label{tab:small-eps-warm-lbfgs}
+\begin{tabular}{lllrrrrrrr}
+\toprule
+Type & $\varepsilon$ & Method & $E_{\rm tr}\le10^{-3}$ & $E_{\rm tr}\le10^{-4}$ & Final Gibbs & Final $E_{\rm tr}$ & $\|\pi-\pi_{\rm LBFGS}\|_1$ & Primal & Dual \\
+\midrule
+Ising & $10^{-5}$ & L-BFGS & 295 & 729 & 954040 & $4.22\times 10^{-3}$ & 0 & $-9.40\times 10^{-1}$ & $-9.35\times 10^{-1}$ \\
+Ising & $10^{-5}$ & KL $\eta=\varepsilon/N$ & 10766 & -- & 1000000 & $4.51\times 10^{-4}$ & $3.77\times 10^{-2}$ & $-9.35\times 10^{-1}$ & $-9.35\times 10^{-1}$ \\
+Ising & $10^{-5}$ & KL $\eta=\varepsilon$ & 2707 & -- & 1000000 & $1.10\times 10^{-4}$ & $3.79\times 10^{-2}$ & $-9.35\times 10^{-1}$ & $-9.35\times 10^{-1}$ \\
+Ising & $10^{-5}$ & MD $M=1$ & 10616 & -- & 1000000 & $3.16\times 10^{-4}$ & $3.80\times 10^{-2}$ & $-9.35\times 10^{-1}$ & $-9.35\times 10^{-1}$ \\
+Ising & $10^{-5}$ & MD $M=2$ & 11282 & -- & 1000000 & $3.27\times 10^{-4}$ & $3.79\times 10^{-2}$ & $-9.35\times 10^{-1}$ & $-9.35\times 10^{-1}$ \\
+Ising & $10^{-5}$ & MD $M=5$ & 12886 & -- & 1000000 & $3.51\times 10^{-4}$ & $3.79\times 10^{-2}$ & $-9.35\times 10^{-1}$ & $-9.35\times 10^{-1}$ \\
+\midrule
+Ising & $10^{-7}$ & L-BFGS & -- & -- & 1490619 & $3.50\times 10^{-1}$ & 0 & $-9.75\times 10^{-1}$ & $-9.35\times 10^{-1}$ \\
+Ising & $10^{-7}$ & KL $\eta=\varepsilon/N$ & 11402 & -- & 1000000 & $1.03\times 10^{-3}$ & $3.70\times 10^{-1}$ & $-9.35\times 10^{-1}$ & $-9.35\times 10^{-1}$ \\
+Ising & $10^{-7}$ & KL $\eta=\varepsilon$ & 2863 & -- & 1000000 & $9.34\times 10^{-4}$ & $3.70\times 10^{-1}$ & $-9.35\times 10^{-1}$ & $-9.35\times 10^{-1}$ \\
+Ising & $10^{-7}$ & MD $M=1$ & 11240 & -- & 1000000 & $1.03\times 10^{-3}$ & $3.70\times 10^{-1}$ & $-9.35\times 10^{-1}$ & $-9.35\times 10^{-1}$ \\
+Ising & $10^{-7}$ & MD $M=2$ & 11926 & -- & 1000000 & $1.03\times 10^{-3}$ & $3.70\times 10^{-1}$ & $-9.35\times 10^{-1}$ & $-9.35\times 10^{-1}$ \\
+Ising & $10^{-7}$ & MD $M=5$ & 13530 & -- & 1000000 & $1.02\times 10^{-3}$ & $3.70\times 10^{-1}$ & $-9.35\times 10^{-1}$ & $-9.35\times 10^{-1}$ \\
+\midrule
+Random & $10^{-5}$ & L-BFGS & 470 & -- & 949067 & $9.19\times 10^{-3}$ & 0 & $-8.35\times 10^{-1}$ & $-8.36\times 10^{-1}$ \\
+Random & $10^{-5}$ & KL $\eta=\varepsilon/N$ & 5024 & -- & 680473 & $1.02\times 10^{-4}$ & $1.88\times 10^{-2}$ & $-8.36\times 10^{-1}$ & $-8.36\times 10^{-1}$ \\
+Random & $10^{-5}$ & KL $\eta=\varepsilon$ & 6789 & -- & 170225 & $1.02\times 10^{-4}$ & $1.88\times 10^{-2}$ & $-8.36\times 10^{-1}$ & $-8.36\times 10^{-1}$ \\
+Random & $10^{-5}$ & MD $M=1$ & 4229 & 363307 & 363307 & $1.00\times 10^{-4}$ & $1.88\times 10^{-2}$ & $-8.36\times 10^{-1}$ & $-8.36\times 10^{-1}$ \\
+Random & $10^{-5}$ & MD $M=2$ & 4208 & 352797 & 352797 & $1.00\times 10^{-4}$ & $1.88\times 10^{-2}$ & $-8.36\times 10^{-1}$ & $-8.36\times 10^{-1}$ \\
+Random & $10^{-5}$ & MD $M=5$ & 7838 & 307735 & 307735 & $9.99\times 10^{-5}$ & $1.87\times 10^{-2}$ & $-8.36\times 10^{-1}$ & $-8.36\times 10^{-1}$ \\
+\midrule
+Random & $10^{-7}$ & L-BFGS & -- & -- & 1318088 & $1.50\times 10^{-1}$ & 0 & $-8.11\times 10^{-1}$ & $-8.36\times 10^{-1}$ \\
+Random & $10^{-7}$ & KL $\eta=\varepsilon/N$ & 5548 & -- & 1000000 & $1.06\times 10^{-3}$ & $2.83\times 10^{-1}$ & $-8.36\times 10^{-1}$ & $-8.36\times 10^{-1}$ \\
+Random & $10^{-7}$ & KL $\eta=\varepsilon$ & 6909 & -- & 1000000 & $8.32\times 10^{-4}$ & $2.83\times 10^{-1}$ & $-8.36\times 10^{-1}$ & $-8.36\times 10^{-1}$ \\
+Random & $10^{-7}$ & MD $M=1$ & 4697 & -- & 1000000 & $1.09\times 10^{-3}$ & $2.83\times 10^{-1}$ & $-8.36\times 10^{-1}$ & $-8.36\times 10^{-1}$ \\
+Random & $10^{-7}$ & MD $M=2$ & 4692 & -- & 1000000 & $1.10\times 10^{-3}$ & $2.83\times 10^{-1}$ & $-8.36\times 10^{-1}$ & $-8.36\times 10^{-1}$ \\
+Random & $10^{-7}$ & MD $M=5$ & 8402 & -- & 1000000 & $9.34\times 10^{-4}$ & $2.83\times 10^{-1}$ & $-8.36\times 10^{-1}$ & $-8.36\times 10^{-1}$ \\
+\bottomrule
+\end{tabular}
+\end{table}

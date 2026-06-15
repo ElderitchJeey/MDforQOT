@@ -197,6 +197,7 @@ def md_type_sinkhorn_potential(
     N = len(dims)
     if len(gammas) != N:
         raise ValueError(f"len(gammas)={len(gammas)} must equal len(dims)={N}")
+    log_gammas = [herm_log(gamma, jitter=jitter) for gamma in gammas]
 
     if U0 is None:
         U_list = [np.zeros((dims[i], dims[i]), dtype=complex) for i in range(N)]
@@ -260,7 +261,7 @@ def md_type_sinkhorn_potential(
                 err_i = float(trace_norm(rho_i - gammas[i]))
                 if err_i <= float(tol_inner):
                     break
-                V = eps * (herm_log(gammas[i], jitter=jitter) - herm_log(rho_i, jitter=jitter))
+                V = eps * (log_gammas[i] - herm_log(rho_i, jitter=jitter))
                 U_list[i] = hermitianize(U_list[i] + V)  # eta_inner = 1
                 pi = gibbs_state_from_potentials(U_list, H, eps, dims, jitter=jitter, project=project_pi)
 
@@ -339,6 +340,7 @@ def potential_marginal_kl_descent(
     if len(gammas) != N:
         raise ValueError(f"len(gammas)={len(gammas)} must equal len(dims)={N}")
     eta, resolved_eta_rule = _resolve_kl_eta(eps, N, eta, eta_rule)
+    log_gammas = [herm_log(gamma, jitter=jitter_log) for gamma in gammas]
 
     if U0 is None:
         U_list = [np.zeros((dims[i], dims[i]), dtype=complex) for i in range(N)]
@@ -373,7 +375,7 @@ def potential_marginal_kl_descent(
         rho_list = [partial_trace_except_i(pi, dims, i) for i in range(N)]
         for i in range(N):
             log_rho = herm_log(rho_list[i], jitter=jitter_log)
-            log_gam = herm_log(gammas[i], jitter=jitter_log)
+            log_gam = log_gammas[i]
             U_list[i] = hermitianize(U_list[i] - eta * (log_rho - log_gam))
 
         pi = gibbs_state_from_potentials(U_list, H, eps, dims, jitter=jitter_log, project=project_pi)
@@ -733,6 +735,7 @@ def md_inner_update_i(
 
     # Work on a copy of potentials (avoid surprising external mutation)
     U_new = [Ui.copy() for Ui in U_list]
+    log_gamma_i = herm_log(gamma_i, jitter=jitter)
 
     # Initialize pi
     if pi0 is None:
@@ -787,7 +790,7 @@ def md_inner_update_i(
         rho_i = partial_trace_except_i(pi, dims, i)
 
         # V = eps*(log gamma_i - log rho_i)
-        V = eps * (herm_log(gamma_i, jitter=jitter) - herm_log(rho_i, jitter=jitter))
+        V = eps * (log_gamma_i - herm_log(rho_i, jitter=jitter))
         U_new[i] = hermitianize(U_new[i] + eta_inner * V)
 
         pi = gibbs_state_from_potentials(U_new, H, eps, dims, jitter=jitter, project=project_pi)

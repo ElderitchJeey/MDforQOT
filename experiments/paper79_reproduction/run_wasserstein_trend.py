@@ -13,10 +13,19 @@ from typing import Any, Dict, List, Tuple
 
 import numpy as np
 
+from src.experiment_utils import (
+    append_checkpoint,
+    default_checkpoint_path,
+    fieldnames_union,
+    parse_csv_floats,
+    parse_csv_ints,
+    parse_csv_strings,
+    reset_checkpoint,
+)
 from src.linalg import proj_to_density
 from src.tensor import partial_trace_except_i
 
-from .run_lbgfs_vs_ours import DEFAULT_M_LIST, fieldnames_union, run_instance_for_eps, write_csv
+from .run_lbgfs_vs_ours import DEFAULT_M_LIST, run_instance_for_eps
 
 
 def annihilation_operator(d: int) -> np.ndarray:
@@ -156,19 +165,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--out", type=Path, default=Path("results") / "wasserstein_d20_eps1e-3_summary.csv")
     parser.add_argument("--checkpoint_jsonl", type=Path, default=None)
     parser.add_argument("--no_checkpoint", action="store_true")
+    parser.add_argument(
+        "--save_final_state",
+        action="store_true",
+        help="Save final pi, potentials, H, marginals, and metadata as compressed .npz files.",
+    )
+    parser.add_argument(
+        "--state_dir",
+        type=Path,
+        default=None,
+        help="Directory for --save_final_state files. Defaults to a sibling *_states directory.",
+    )
     return parser
 
 
 def main() -> None:
-    from .run_lbgfs_vs_ours import (
-        append_checkpoint,
-        default_checkpoint_path,
-        parse_csv_floats,
-        parse_csv_ints,
-        parse_csv_strings,
-        reset_checkpoint,
-    )
-
     args = build_parser().parse_args()
     args.methods = [x.strip().lower() for x in args.methods.split(",") if x.strip()]
     args.M_list = parse_csv_ints(args.M_list)

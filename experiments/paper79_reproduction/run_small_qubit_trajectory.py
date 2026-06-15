@@ -9,6 +9,7 @@ from typing import Any, Dict, List
 
 import numpy as np
 
+from src.experiment_utils import parse_csv_ints
 from src.SolverofEQOT import md_type_sinkhorn_potential, potential_marginal_kl_descent
 
 from .run_small_qubit_trend import make_small_instance
@@ -139,8 +140,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
-    from .run_lbgfs_vs_ours import parse_csv_ints
-
     args = build_parser().parse_args()
     args.methods = [x.strip().lower() for x in args.methods.split(",") if x.strip()]
     args.M_list = parse_csv_ints(args.M_list)

@@ -1,0 +1,4 @@
+/home/zlin/.conda/envs/mdforqot/bin/python -m experiments.paper79_reproduction.run_small_qubit_trend --kinds ising --N 4 --case mixed --seeds 0 --eps 1e-07 --T_kl 3000 --T_md 3000 --lbfgs_max_iter 50000 --tol_tr 0.0001 --tol_f 1e-08 --tol_inner 0.0001 --out results/hpc_standard_qubit_eps_N4_lbfgs_rerun/cold/N4/ising_mixed_seed0_lbfgs_eps1em07.csv --methods lbfgs --max_gibbs_calls 1000000 --save_final_state --state_dir results/hpc_standard_qubit_eps_N4_lbfgs_rerun/final_states/lbfgs/N4
+[Run] kind=ising N=4 case=mixed seed=0 eps=1e-07
+Wrote results/hpc_standard_qubit_eps_N4_lbfgs_rerun/cold/N4/ising_mixed_seed0_lbfgs_eps1em07.csv
+Wrote partial checkpoint results/hpc_standard_qubit_eps_N4_lbfgs_rerun/cold/N4/ising_mixed_seed0_lbfgs_eps1em07.csv.partial.jsonl

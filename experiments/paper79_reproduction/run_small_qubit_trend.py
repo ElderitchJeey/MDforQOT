@@ -19,14 +19,21 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 
 from src.instances import gen_H_ising_qubits
+from src.experiment_utils import (
+    append_checkpoint,
+    default_checkpoint_path,
+    fieldnames_union,
+    parse_csv_floats,
+    parse_csv_ints,
+    parse_csv_strings,
+    reset_checkpoint,
+)
 from src.linalg import proj_to_density
 from src.tensor import partial_trace_except_i
 
 from .run_lbgfs_vs_ours import (
     DEFAULT_M_LIST,
-    fieldnames_union,
     run_instance_for_eps,
-    write_csv,
 )
 
 
@@ -162,15 +169,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
-    from .run_lbgfs_vs_ours import (
-        append_checkpoint,
-        default_checkpoint_path,
-        parse_csv_floats,
-        parse_csv_ints,
-        parse_csv_strings,
-        reset_checkpoint,
-    )
-
     args = build_parser().parse_args()
     args.methods = [x.strip().lower() for x in args.methods.split(",") if x.strip()]
     for method in args.methods:

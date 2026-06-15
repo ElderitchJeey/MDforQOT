@@ -18,17 +18,26 @@ The file name intentionally follows the user's requested spelling
 from __future__ import annotations
 
 import argparse
-import csv
-import json
-import re
 import time
 from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Dict, Iterable, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 import numpy as np
 
+from src.experiment_utils import (
+    append_checkpoint,
+    default_checkpoint_path,
+    first_hit_index,
+    parse_csv_floats,
+    parse_csv_ints,
+    parse_csv_strings,
+    reset_checkpoint,
+    save_final_state,
+    tol_label,
+    write_csv,
+)
 from src.SolverofEQOT import md_type_sinkhorn_potential, potential_marginal_kl_descent
 
 from .adapter import ensure_paper79_import_path, load_paper79_instance, make_tiny_smoke_instance
@@ -39,33 +48,40 @@ PAPER79_INDICES = list(range(12))
 MAIN_EPS = [1e-2, 1e-3]
 STRESS_EPS = [1e-4, 1e-8, 1e-12]
 DEFAULT_M_LIST = [1, 2, 5]
-
-
-def parse_csv_ints(spec: str) -> List[int]:
-    spec = spec.strip().lower()
-    if spec == "all":
-        return PAPER79_INDICES.copy()
-    out: List[int] = []
-    for part in spec.split(","):
-        part = part.strip()
-        if not part:
-            continue
-        if "-" in part:
-            a, b = part.split("-", 1)
-            start, stop = int(a), int(b)
-            step = 1 if start <= stop else -1
-            out.extend(range(start, stop + step, step))
-        else:
-            out.append(int(part))
-    return out
-
-
-def parse_csv_floats(spec: str) -> List[float]:
-    return [float(x.strip()) for x in spec.split(",") if x.strip()]
-
-
-def parse_csv_strings(spec: str) -> List[str]:
-    return [x.strip() for x in spec.split(",") if x.strip()]
+RUNNER_PREFERRED_FIELDS = [
+    "experiment",
+    "paper79_index",
+    "paper79_label",
+    "eps",
+    "dims",
+    "method",
+    "M_inner",
+    "status",
+    "converged",
+    "iters",
+    "time_sec",
+    "gibbs_calls",
+    "gibbs_calls_optimizer",
+    "gibbs_calls_unified",
+    "final_cost",
+    "final_entropic_primal",
+    "final_linear_cost",
+    "final_entropy",
+    "final_dual_value",
+    "final_primal_dual_gap",
+    "final_state_path",
+    "final_F_marg",
+    "final_e_tr",
+    "hit_F_iter",
+    "hit_tr_iter",
+    "hit_F_gibbs",
+    "hit_tr_gibbs",
+    "hit_tr_gibbs_unified",
+    "same_limit_to_lbfgs",
+    "dist_pi_to_lbfgs",
+    "objective_gap_to_lbfgs",
+    "dual_gap_to_lbfgs",
+]
 
 
 def kl_method_label(*, eta: Optional[float], eta_rule: str) -> str:
@@ -74,80 +90,6 @@ def kl_method_label(*, eta: Optional[float], eta_rule: str) -> str:
     if eta_rule == "eps":
         return "KL descent (eta=eps)"
     return "KL descent (eta=eps/N)"
-
-
-def tol_label(tol: float) -> str:
-    return f"{float(tol):.0e}".replace("-", "m").replace("+", "p")
-
-
-def safe_filename(text: Any) -> str:
-    raw = str(text)
-    raw = raw.replace("eta=eps/N", "eta_eps_over_N")
-    raw = raw.replace("eta=eps", "eta_eps")
-    return re.sub(r"[^A-Za-z0-9_.-]+", "_", raw).strip("_") or "value"
-
-
-def final_state_dir(args: argparse.Namespace) -> Path:
-    state_dir = getattr(args, "state_dir", None)
-    if state_dir is not None:
-        return Path(state_dir)
-    out = Path(getattr(args, "out", Path("results") / "paper79_lbgfs_vs_ours.csv"))
-    return out.parent / f"{out.stem}_states"
-
-
-def save_final_state(
-    *,
-    args: argparse.Namespace,
-    row: Dict[str, Any],
-    res: Any,
-    H: np.ndarray,
-    gammas,
-    dims,
-    eps: float,
-) -> str:
-    """Persist final coupling/potentials for post-processing tables."""
-
-    if not getattr(args, "save_final_state", False):
-        return ""
-    if res is None:
-        return ""
-    pi = getattr(res, "pi", None)
-    U_list = getattr(res, "U_list", None)
-    if pi is None or U_list is None:
-        return ""
-
-    out_dir = final_state_dir(args)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    parts = [
-        safe_filename(row.get("experiment", "exp")),
-        safe_filename(row.get("paper79_label", row.get("paper79_index", "instance"))),
-        f"eps{safe_filename(f'{float(eps):.0e}')}",
-        safe_filename(row.get("method", "method")),
-    ]
-    if row.get("M_inner") not in (None, ""):
-        parts.append(f"M{safe_filename(row['M_inner'])}")
-    path = out_dir / ("__".join(parts) + ".npz")
-
-    payload: Dict[str, Any] = {
-        "pi": np.asarray(pi),
-        "H": np.asarray(H),
-        "dims": np.asarray(dims, dtype=int),
-        "eps": np.asarray(float(eps)),
-        "metadata_json": np.asarray(json.dumps(row, sort_keys=True, default=str)),
-    }
-    for i, gamma in enumerate(gammas):
-        payload[f"gamma_{i}"] = np.asarray(gamma)
-    for i, Ui in enumerate(U_list):
-        payload[f"U_{i}"] = np.asarray(Ui)
-
-    np.savez_compressed(path, **payload)
-    return str(path)
-
-
-def first_hit_index(values: Sequence[float], tol: float) -> int:
-    arr = np.asarray(values, dtype=float)
-    hit = np.where(arr <= float(tol))[0]
-    return int(hit[0]) if hit.size else -1
 
 
 def parse_experiments(spec: str) -> List[str]:
@@ -170,6 +112,7 @@ def make_result_from_lbfgs(
     dims,
     e_tr_history: Optional[Sequence[float]] = None,
     gibbs_history: Optional[Sequence[int]] = None,
+    gibbs_history_unified: Optional[Sequence[int]] = None,
 ) -> SimpleNamespace:
     """Convert paper79 L-BFGS output to the repo metric protocol."""
 
@@ -181,7 +124,15 @@ def make_result_from_lbfgs(
     tol_reached = bool(state["tol_reached"])
     e_list = [float(x) for x in e_tr_history] if e_tr_history is not None else [e]
     gibbs_list = [int(x) for x in gibbs_history] if gibbs_history is not None else [n_iters]
+    gibbs_unified_list = (
+        [int(x) for x in gibbs_history_unified]
+        if gibbs_history_unified is not None
+        else [g + k + 1 for k, g in enumerate(gibbs_list)]
+    )
     total_gibbs = int(state.get("gibbs_calls", gibbs_list[-1] if gibbs_list else n_iters))
+    total_gibbs_unified = int(
+        state.get("gibbs_calls_unified", (gibbs_unified_list[-1] if gibbs_unified_list else total_gibbs))
+    )
 
     return SimpleNamespace(
         F_list=[],
@@ -192,8 +143,11 @@ def make_result_from_lbfgs(
         U_list=list(state["params"]),
         converged=tol_reached,
         n_iters=n_iters,
+        gibbs_calls_optimizer=total_gibbs,
         gibbs_calls=total_gibbs,
         gibbs_calls_list=gibbs_list,
+        gibbs_calls_unified=total_gibbs_unified,
+        gibbs_calls_list_unified=gibbs_unified_list,
     )
 
 
@@ -258,7 +212,10 @@ def run_lbfgs_with_error_history(
                 value_fn=fun,
             )
             params = optax.apply_updates(params, updates)
-            line_steps = otu.tree_get(state, "num_linesearch_steps", default=jnp.asarray(0, dtype=jnp.int32))
+            line_steps = jnp.asarray(
+                otu.tree_get(state, "num_linesearch_steps", default=jnp.asarray(0, dtype=jnp.int32)),
+                dtype=jnp.int32,
+            )
             total_gibbs = total_gibbs + 1 + line_steps
 
             loss_log = loss_log.at[it].set(-value)
@@ -343,6 +300,12 @@ def run_lbfgs_entropy(
     n_iters = int(state["n_iters"])
     e_tr_history = np.asarray(state.get("e_tr_history", []), dtype=float)[:n_iters]
     gibbs_history = np.asarray(state.get("gibbs_history", []), dtype=int)[:n_iters]
+    # Preserve the original paper79/optimizer count, and add a conservative
+    # count that includes one diagnostic Gibbs evaluation per recorded point
+    # plus the final primal reconstruction performed below.
+    gibbs_history_unified = gibbs_history + np.arange(1, n_iters + 1, dtype=int)
+    state["gibbs_calls_optimizer"] = int(state.get("gibbs_calls", 0))
+    state["gibbs_calls_unified"] = int(state["gibbs_calls_optimizer"] + n_iters + 1)
     return make_result_from_lbfgs(
         state=state,
         pi=pi,
@@ -352,6 +315,7 @@ def run_lbfgs_entropy(
         dims=dims,
         e_tr_history=e_tr_history,
         gibbs_history=gibbs_history,
+        gibbs_history_unified=gibbs_history_unified,
     )
 
 
@@ -365,8 +329,12 @@ def make_lbfgs_first_hit_row(*, res: SimpleNamespace, args: argparse.Namespace) 
 
     e = list(getattr(res, "e_tr_list", []) or [])
     gibbs = list(getattr(res, "gibbs_calls_list", []) or [])
+    gibbs_unified = list(getattr(res, "gibbs_calls_list_unified", []) or [])
     primary_idx = first_hit_index(e, args.tol_tr) if e else -1
     primary_gibbs = int(gibbs[primary_idx]) if primary_idx >= 0 and len(gibbs) == len(e) else -1
+    primary_gibbs_unified = (
+        int(gibbs_unified[primary_idx]) if primary_idx >= 0 and len(gibbs_unified) == len(e) else ""
+    )
     primary_e = float(e[primary_idx]) if primary_idx >= 0 else (float(e[-1]) if e else "")
 
     row: Dict[str, Any] = {
@@ -376,6 +344,8 @@ def make_lbfgs_first_hit_row(*, res: SimpleNamespace, args: argparse.Namespace) 
         "iters": primary_gibbs if primary_gibbs >= 0 else int(getattr(res, "n_iters", 0) or 0),
         "time_sec": "",
         "gibbs_calls": primary_gibbs if primary_gibbs >= 0 else int(getattr(res, "gibbs_calls", 0) or 0),
+        "gibbs_calls_optimizer": primary_gibbs if primary_gibbs >= 0 else int(getattr(res, "gibbs_calls", 0) or 0),
+        "gibbs_calls_unified": primary_gibbs_unified if primary_gibbs_unified != "" else getattr(res, "gibbs_calls_unified", ""),
         "final_cost": "",
         "final_entropic_primal": "",
         "final_linear_cost": "",
@@ -388,6 +358,7 @@ def make_lbfgs_first_hit_row(*, res: SimpleNamespace, args: argparse.Namespace) 
         "hit_tr_iter": primary_idx,
         "hit_F_gibbs": "",
         "hit_tr_gibbs": primary_gibbs,
+        "hit_tr_gibbs_unified": primary_gibbs_unified,
     }
     for tol in args.tol_f_grid:
         lab = tol_label(tol)
@@ -398,9 +369,11 @@ def make_lbfgs_first_hit_row(*, res: SimpleNamespace, args: argparse.Namespace) 
         lab = tol_label(tol)
         idx = first_hit_index(e, tol) if e else -1
         hit_gibbs = int(gibbs[idx]) if idx >= 0 and len(gibbs) == len(e) else ""
+        hit_gibbs_unified = int(gibbs_unified[idx]) if idx >= 0 and len(gibbs_unified) == len(e) else ""
         row[f"hit_tr_le_{lab}"] = bool(idx >= 0) if e else ""
         row[f"hit_tr_iter_le_{lab}"] = idx if e else ""
         row[f"hit_tr_gibbs_le_{lab}"] = hit_gibbs
+        row[f"hit_tr_gibbs_unified_le_{lab}"] = hit_gibbs_unified
     return row
 
 
@@ -594,6 +567,7 @@ def add_tolerance_grid_metrics(entries: List[Dict[str, Any]], args: argparse.Nam
         F = list(getattr(res, "F_list", []) or []) if res is not None else []
         e = list(getattr(res, "e_tr_list", []) or []) if res is not None else []
         gibbs = list(getattr(res, "gibbs_calls_list", []) or []) if res is not None else []
+        gibbs_unified = list(getattr(res, "gibbs_calls_list_unified", []) or []) if res is not None else []
 
         for tol in args.tol_f_grid:
             lab = tol_label(tol)
@@ -608,6 +582,9 @@ def add_tolerance_grid_metrics(entries: List[Dict[str, Any]], args: argparse.Nam
             row[f"hit_tr_le_{lab}"] = bool(idx >= 0) if e else ""
             row[f"hit_tr_iter_le_{lab}"] = idx if e else ""
             row[f"hit_tr_gibbs_le_{lab}"] = int(gibbs[idx]) if idx >= 0 and len(gibbs) == len(e) else ""
+            row[f"hit_tr_gibbs_unified_le_{lab}"] = (
+                int(gibbs_unified[idx]) if idx >= 0 and len(gibbs_unified) == len(e) else ""
+            )
 
 
 def add_cross_method_consistency(entries: List[Dict[str, Any]], args: argparse.Namespace) -> None:
@@ -694,81 +671,6 @@ def add_cross_method_consistency(entries: List[Dict[str, Any]], args: argparse.N
             row["dual_gap_to_lbfgs"] = ""
 
 
-def fieldnames_union(rows: Iterable[Dict[str, Any]]) -> List[str]:
-    names: List[str] = []
-    seen = set()
-    preferred = [
-        "experiment",
-        "paper79_index",
-        "paper79_label",
-        "eps",
-        "dims",
-        "method",
-        "M_inner",
-        "status",
-        "converged",
-        "iters",
-        "time_sec",
-        "gibbs_calls",
-        "final_cost",
-        "final_entropic_primal",
-        "final_linear_cost",
-        "final_entropy",
-        "final_dual_value",
-        "final_primal_dual_gap",
-        "final_state_path",
-        "final_F_marg",
-        "final_e_tr",
-        "hit_F_iter",
-        "hit_tr_iter",
-        "hit_F_gibbs",
-        "hit_tr_gibbs",
-        "same_limit_to_lbfgs",
-        "dist_pi_to_lbfgs",
-        "objective_gap_to_lbfgs",
-        "dual_gap_to_lbfgs",
-    ]
-    for name in preferred:
-        seen.add(name)
-        names.append(name)
-    for row in rows:
-        for name in row:
-            if name not in seen:
-                seen.add(name)
-                names.append(name)
-    return names
-
-
-def write_csv(path: Path, rows: List[Dict[str, Any]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fields = fieldnames_union(rows)
-    with path.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
-        writer.writeheader()
-        writer.writerows(rows)
-
-
-def default_checkpoint_path(out: Path) -> Path:
-    return out.with_suffix(out.suffix + ".partial.jsonl")
-
-
-def reset_checkpoint(path: Optional[Path]) -> None:
-    if path is None:
-        return
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("", encoding="utf-8")
-
-
-def append_checkpoint(path: Optional[Path], rows: List[Dict[str, Any]]) -> None:
-    if path is None or not rows:
-        return
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as f:
-        for row in rows:
-            f.write(json.dumps(row, sort_keys=True, default=str) + "\n")
-        f.flush()
-
-
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser("Compare paper79 L-BFGS against MDforQOT methods")
     parser.add_argument("--experiment", default="main", help="main, stress, or all")
@@ -831,7 +733,7 @@ def main() -> None:
     args.tol_f_grid = parse_csv_floats(args.tol_f_grid)
     args.tol_tr_grid = parse_csv_floats(args.tol_tr_grid)
     experiments = parse_experiments(args.experiment)
-    indices = [0] if args.tiny_smoke else parse_csv_ints(args.indices)
+    indices = [0] if args.tiny_smoke else parse_csv_ints(args.indices, all_values=PAPER79_INDICES)
     eps_by_experiment = {
         "main": parse_csv_floats(args.main_eps),
         "stress": parse_csv_floats(args.stress_eps),
@@ -848,7 +750,7 @@ def main() -> None:
                 rows.extend(batch)
                 append_checkpoint(checkpoint_path, batch)
 
-    write_csv(args.out, rows)
+    write_csv(args.out, rows, preferred=RUNNER_PREFERRED_FIELDS)
     for row in rows:
         print(row)
     print(f"Wrote {args.out}")

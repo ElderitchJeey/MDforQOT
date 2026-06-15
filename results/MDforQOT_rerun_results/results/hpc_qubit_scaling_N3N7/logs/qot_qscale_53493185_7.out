@@ -1,0 +1,4 @@
+/home/zlin/.conda/envs/mdforqot/bin/python -m experiments.paper79_reproduction.run_small_qubit_trend --kinds random --N 6 --case mixed --seeds 0 --eps 0.001 --T_kl 100000 --T_md 100000 --lbfgs_max_iter 100000 --tol_tr 0.0001 --tol_f 1e-08 --tol_inner 0.0001 --out results/hpc_qubit_scaling_N3N7/N6/random_mixed_seed0_all_eps1em03.csv --methods lbfgs,kl,md --M_list 1,2,5 --eta_kl_rules eps_over_N,eps --max_gibbs_calls 100000
+[Run] kind=random N=6 case=mixed seed=0 eps=0.001
+Wrote results/hpc_qubit_scaling_N3N7/N6/random_mixed_seed0_all_eps1em03.csv
+Wrote partial checkpoint results/hpc_qubit_scaling_N3N7/N6/random_mixed_seed0_all_eps1em03.csv.partial.jsonl

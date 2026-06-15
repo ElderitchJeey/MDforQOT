@@ -114,12 +114,15 @@ def summarize_solver_result(
     e_list = list(getattr(res, "e_tr_list", []) or [])
     times = list(getattr(res, "times", []) or [])
     gibbs_list = list(getattr(res, "gibbs_calls_list", []) or [])
+    gibbs_unified_list = list(getattr(res, "gibbs_calls_list_unified", []) or [])
 
     final_f = float(f_list[-1]) if f_list else float(F_marg(pi, gammas, dims))
     per_i = marginal_trace_errors(pi, gammas, dims)
     final_e = float(e_list[-1]) if e_list else float(np.max(per_i))
     elapsed = float(times[-1]) if times else 0.0
     gibbs_calls = int(getattr(res, "gibbs_calls", 0) or 0)
+    gibbs_calls_optimizer = getattr(res, "gibbs_calls_optimizer", "")
+    gibbs_calls_unified = getattr(res, "gibbs_calls_unified", "")
     U_list = getattr(res, "U_list", None)
     final_dual_value = ""
     final_primal_dual_gap = ""
@@ -142,6 +145,8 @@ def summarize_solver_result(
         "iters": n_iters,
         "time_sec": elapsed,
         "gibbs_calls": gibbs_calls,
+        "gibbs_calls_optimizer": int(gibbs_calls_optimizer) if gibbs_calls_optimizer not in (None, "") else "",
+        "gibbs_calls_unified": int(gibbs_calls_unified) if gibbs_calls_unified not in (None, "") else "",
         "final_cost": entropic_cost,
         "final_entropic_primal": entropic_cost,
         "final_linear_cost": linear_cost,
@@ -154,6 +159,7 @@ def summarize_solver_result(
         "hit_tr_iter": hit_tr,
         "hit_F_gibbs": int(gibbs_list[hit_f]) if hit_f >= 0 and len(gibbs_list) == len(f_list) else -1,
         "hit_tr_gibbs": int(gibbs_list[hit_tr]) if hit_tr >= 0 and len(gibbs_list) == len(e_list) else -1,
+        "hit_tr_gibbs_unified": int(gibbs_unified_list[hit_tr]) if hit_tr >= 0 and len(gibbs_unified_list) == len(e_list) else "",
     }
 
     if hasattr(res, "eta"):

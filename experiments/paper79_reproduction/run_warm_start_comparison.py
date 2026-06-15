@@ -10,22 +10,12 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 
 from src.annealed_solvers import annealed_eqot_solver
+from src.experiment_utils import first_hit_index, parse_csv_ints, save_final_state
 from src.SolverofEQOT import F_marg, md_type_sinkhorn_potential, marginal_trace_errors, potential_marginal_kl_descent
 
 from .metrics import entropic_dual_value, entropic_primal_cost, primal_cost, von_neumann_entropy_term
-from .run_lbgfs_vs_ours import save_final_state
 from .run_small_qubit_trend import make_small_instance
 from .run_wasserstein_trend import make_wasserstein_instance
-
-
-def parse_csv_ints(spec: str) -> List[int]:
-    return [int(x.strip()) for x in spec.split(",") if x.strip()]
-
-
-def first_hit(values: List[float], tol: float) -> int:
-    arr = np.asarray(values, dtype=float)
-    hit = np.where(arr <= float(tol))[0]
-    return int(hit[0]) if hit.size else -1
 
 
 def summarize_result(
@@ -91,7 +81,7 @@ def summarize_result(
         "eps_schedule": ";".join(str(x) for x in (getattr(warmup, "stage_eps_list", None) or getattr(warmup, "eps_schedule", None) or [])),
     }
     for tol, label in [(1e-3, "1em03"), (1e-4, "1em04")]:
-        idx = first_hit(e_list, tol) if e_list else -1
+        idx = first_hit_index(e_list, tol) if e_list else -1
         hit_gibbs = int(gibbs_list[idx]) if idx >= 0 and len(gibbs_list) == len(e_list) else -1
         row[f"hit_tr_le_{label}"] = bool(idx >= 0) if e_list else ""
         row[f"hit_tr_iter_le_{label}"] = idx if e_list else ""

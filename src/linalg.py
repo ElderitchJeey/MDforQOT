@@ -72,6 +72,34 @@ def herm_log(rho: np.ndarray, jitter: float = 1e-12) -> np.ndarray:
     return hermitianize(X)
 
 
+def herm_log_2x2(rho: np.ndarray, jitter: float = 1e-12) -> np.ndarray:
+    """Fast ``log(rho)`` for 2x2 Hermitian positive semidefinite matrices.
+
+    If ``rho`` has eigenvalues ``mu +/- delta``, then
+    ``log(rho) = c I + s (rho - mu I)``.  This avoids a dense eigensolve for
+    qubit marginals, which occur frequently in KL/MD updates.
+    """
+
+    A = hermitianize(np.asarray(rho))
+    a = A[0, 0].real
+    d = A[1, 1].real
+    b2 = (A[0, 1] * A[1, 0]).real
+    mu = 0.5 * (a + d)
+    delta = np.sqrt(max(0.25 * (a - d) * (a - d) + b2, 0.0))
+    I = np.eye(2, dtype=A.dtype)
+
+    floor = float(jitter)
+    mu_safe = max(mu, floor)
+    if delta < 1e-14 * max(mu_safe, 1.0):
+        return hermitianize(np.log(mu_safe) * I + (A - mu * I) / mu_safe)
+
+    lp = max(mu + delta, floor)
+    lm = max(mu - delta, floor)
+    c = 0.5 * (np.log(lp) + np.log(lm))
+    s = (np.log(lp) - np.log(lm)) / (2.0 * delta)
+    return hermitianize(c * I + s * (A - mu * I))
+
+
 def quantum_KL(rho: np.ndarray, sigma: np.ndarray, jitter: float = 1e-12) -> float:
     """KL(rho||sigma) = Tr rho (log rho - log sigma) for density operators."""
     lr = herm_log(rho, jitter=jitter)

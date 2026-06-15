@@ -15,10 +15,10 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 
 from src.annealed_solvers import annealed_eqot_solver
+from src.experiment_utils import parse_csv_ints
 from src.SolverofEQOT import md_type_sinkhorn_potential, potential_marginal_kl_descent
 
 from .metrics import entropic_dual_value
-from .run_lbgfs_vs_ours import parse_csv_ints
 from .run_small_qubit_trend import make_small_instance
 
 
